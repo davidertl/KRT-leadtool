@@ -15,8 +15,8 @@ services:
       - "443:443"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/webroot:/var/www/certbot:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+      - certbot-certs:/etc/letsencrypt:ro
       - frontend-build:/usr/share/nginx/html:ro
     depends_on:
       backend:
@@ -212,6 +212,28 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # ============================================================
+  # Certbot - Let's Encrypt SSL certificate management
+  # ============================================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: krt-certbot
+    volumes:
+      - certbot-webroot:/var/www/certbot
+      - certbot-certs:/etc/letsencrypt
+    depends_on:
+      - nginx
+    # Renew every 12 hours (only acts when renewal is due)
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+    restart: unless-stopped
+    networks:
+      - krt-public
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 # ============================================================
 # Networks
 # ============================================================
@@ -226,4 +248,8 @@ networks:
 # ============================================================
 volumes:
   frontend-build:
+    driver: local
+  certbot-webroot:
+    driver: local
+  certbot-certs:
     driver: local
