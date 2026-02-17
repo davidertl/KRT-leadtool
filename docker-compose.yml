@@ -120,6 +120,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./postgres/seed_stanton.sql:/docker-entrypoint-initdb.d/02-seed-stanton.sql:ro
       - ./data/postgres:/var/lib/postgresql/data
     networks:
       - krt-internal
@@ -221,13 +222,9 @@ services:
     volumes:
       - certbot-webroot:/var/www/certbot
       - certbot-certs:/etc/letsencrypt
-    depends_on:
-      - nginx
     # Renew every 12 hours (only acts when renewal is due)
-    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet --deploy-hook "true"; sleep 12h & wait $${!}; done'
     restart: unless-stopped
-    networks:
-      - krt-public
     logging:
       driver: json-file
       options:

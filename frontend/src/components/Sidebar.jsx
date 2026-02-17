@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import { useMissionStore } from '../stores/missionStore';
 import { useAuthStore } from '../stores/authStore';
+import SearchFilter from './SearchFilter';
+import UnitDetailPanel from './UnitDetailPanel';
+import SpotrepForm from './SpotrepForm';
+import TaskForm from './TaskForm';
+import OperationPanel from './OperationPanel';
+import EventLog from './EventLog';
+import QuickMessages from './QuickMessages';
+import BookmarkPanel from './BookmarkPanel';
+import toast from 'react-hot-toast';
 
 const MISSION_TYPES = [
   { value: 'SAR', label: '🔍 Search & Rescue', color: '#f59e0b' },
@@ -16,12 +25,30 @@ const STATUS_OPTIONS = ['idle', 'en_route', 'on_station', 'engaged', 'rtb', 'dis
 
 export default function Sidebar({ onBack }) {
   const { user } = useAuthStore();
-  const { teamId, units, groups, selectedUnitIds, clearSelection } = useMissionStore();
+  const { teamId, units, groups, contacts, tasks, operations, events, messages, bookmarks, selectedUnitIds, clearSelection, searchQuery, statusFilter } = useMissionStore();
   const [tab, setTab] = useState('units');
   const [showCreateUnit, setShowCreateUnit] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showSpotrep, setShowSpotrep] = useState(false);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [detailUnitId, setDetailUnitId] = useState(null);
 
   const selectedUnits = units.filter((u) => selectedUnitIds.includes(u.id));
+
+  // Apply search and status filters
+  const filteredUnits = units.filter((u) => {
+    if (statusFilter && u.status !== statusFilter) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const group = groups.find((g) => g.id === u.group_id);
+      return (
+        u.name.toLowerCase().includes(q) ||
+        (u.ship_type && u.ship_type.toLowerCase().includes(q)) ||
+        (group && group.name.toLowerCase().includes(q))
+      );
+    }
+    return true;
+  });
 
   return (
     <div className="w-80 bg-krt-panel border-r border-krt-border flex flex-col h-full overflow-hidden">
@@ -38,29 +65,59 @@ export default function Sidebar({ onBack }) {
         <span className="text-xs text-gray-500">{user?.username}</span>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-krt-border">
-        {['units', 'groups', 'selected'].map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 py-2 text-sm font-medium transition-colors ${
-              tab === t
-                ? 'text-krt-accent border-b-2 border-krt-accent'
-                : 'text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            {t === 'units' && `Units (${units.length})`}
-            {t === 'groups' && `Groups (${groups.length})`}
-            {t === 'selected' && `Selected (${selectedUnitIds.length})`}
-          </button>
-        ))}
+      {/* Tabs — two rows */}
+      <div className="border-b border-krt-border">
+        <div className="flex overflow-x-auto">
+          {['units', 'groups', 'contacts', 'tasks', 'selected'].map((t) => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setDetailUnitId(null); }}
+              className={`flex-1 py-2 text-xs font-medium transition-colors whitespace-nowrap px-1 ${
+                tab === t
+                  ? 'text-krt-accent border-b-2 border-krt-accent'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              {t === 'units' && `Units (${units.length})`}
+              {t === 'groups' && `Groups (${groups.length})`}
+              {t === 'contacts' && `IFF (${contacts.filter(c => c.is_active).length})`}
+              {t === 'tasks' && `Tasks (${tasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length})`}
+              {t === 'selected' && `Sel (${selectedUnitIds.length})`}
+            </button>
+          ))}
+        </div>
+        <div className="flex overflow-x-auto">
+          {['ops', 'comms', 'log', 'bookmarks'].map((t) => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setDetailUnitId(null); }}
+              className={`flex-1 py-1.5 text-[10px] font-medium transition-colors whitespace-nowrap px-1 ${
+                tab === t
+                  ? 'text-krt-accent border-b-2 border-krt-accent'
+                  : 'text-gray-600 hover:text-gray-400'
+              }`}
+            >
+              {t === 'ops' && `🎯 Ops ${operations.filter(o => o.phase !== 'complete').length > 0 ? '●' : ''}`}
+              {t === 'comms' && `📡 Comms`}
+              {t === 'log' && `📜 Log (${events.length})`}
+              {t === 'bookmarks' && `📌 Marks (${bookmarks.length})`}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Search filter (shown on units tab) */}
+      {tab === 'units' && <SearchFilter />}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-3">
+        {/* Unit detail panel (overlays the list when active) */}
+        {detailUnitId && (
+          <UnitDetailPanel unitId={detailUnitId} onClose={() => setDetailUnitId(null)} />
+        )}
+
         {/* Units tab */}
-        {tab === 'units' && (
+        {!detailUnitId && tab === 'units' && (
           <div className="space-y-2">
             <button
               onClick={() => setShowCreateUnit(!showCreateUnit)}
@@ -77,7 +134,7 @@ export default function Sidebar({ onBack }) {
               />
             )}
 
-            {units.map((unit) => {
+            {filteredUnits.map((unit) => {
               const group = groups.find((g) => g.id === unit.group_id);
               return (
                 <UnitListItem
@@ -85,6 +142,7 @@ export default function Sidebar({ onBack }) {
                   unit={unit}
                   group={group}
                   isSelected={selectedUnitIds.includes(unit.id)}
+                  onDoubleClick={() => setDetailUnitId(unit.id)}
                 />
               );
             })}
@@ -114,6 +172,78 @@ export default function Sidebar({ onBack }) {
           </div>
         )}
 
+        {/* Contacts / IFF tab */}
+        {!detailUnitId && tab === 'contacts' && (
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowSpotrep(!showSpotrep)}
+              className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
+            >
+              + File SPOTREP
+            </button>
+
+            {showSpotrep && (
+              <SpotrepForm teamId={teamId} onClose={() => setShowSpotrep(false)} />
+            )}
+
+            {contacts.filter(c => c.is_active).length === 0 && !showSpotrep && (
+              <p className="text-gray-500 text-sm text-center py-4">
+                No active contacts. File a SPOTREP to report one.
+              </p>
+            )}
+
+            {contacts.filter(c => c.is_active).map((contact) => (
+              <ContactListItem key={contact.id} contact={contact} />
+            ))}
+
+            {contacts.filter(c => !c.is_active).length > 0 && (
+              <div className="pt-2 border-t border-krt-border">
+                <p className="text-xs text-gray-600 mb-1">Inactive ({contacts.filter(c => !c.is_active).length})</p>
+                {contacts.filter(c => !c.is_active).map((contact) => (
+                  <ContactListItem key={contact.id} contact={contact} inactive />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tasks tab */}
+        {!detailUnitId && tab === 'tasks' && (
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowTaskForm(!showTaskForm)}
+              className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
+            >
+              + Create Task
+            </button>
+
+            {showTaskForm && (
+              <TaskForm teamId={teamId} onClose={() => setShowTaskForm(false)} />
+            )}
+
+            {tasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length === 0 && !showTaskForm && (
+              <p className="text-gray-500 text-sm text-center py-4">
+                No active tasks. Create one to assign orders.
+              </p>
+            )}
+
+            {tasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').map((task) => (
+              <TaskListItem key={task.id} task={task} />
+            ))}
+
+            {tasks.filter(t => t.status === 'completed' || t.status === 'cancelled').length > 0 && (
+              <div className="pt-2 border-t border-krt-border">
+                <p className="text-xs text-gray-600 mb-1">
+                  Completed ({tasks.filter(t => t.status === 'completed' || t.status === 'cancelled').length})
+                </p>
+                {tasks.filter(t => t.status === 'completed' || t.status === 'cancelled').map((task) => (
+                  <TaskListItem key={task.id} task={task} completed />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Selected tab */}
         {tab === 'selected' && (
           <div className="space-y-2">
@@ -137,18 +267,31 @@ export default function Sidebar({ onBack }) {
             )}
           </div>
         )}
+
+        {/* Operations tab */}
+        {tab === 'ops' && <OperationPanel teamId={teamId} />}
+
+        {/* Comms tab */}
+        {tab === 'comms' && <QuickMessages teamId={teamId} />}
+
+        {/* Event log tab */}
+        {tab === 'log' && <EventLog teamId={teamId} />}
+
+        {/* Bookmarks tab */}
+        {tab === 'bookmarks' && <BookmarkPanel teamId={teamId} />}
       </div>
     </div>
   );
 }
 
 /** Single unit in the sidebar list */
-function UnitListItem({ unit, group, isSelected }) {
-  const { toggleSelectUnit } = useMissionStore();
+function UnitListItem({ unit, group, isSelected, onDoubleClick }) {
+  const { toggleSelectUnit, focusUnit } = useMissionStore();
 
   return (
     <div
       onClick={() => toggleSelectUnit(unit.id)}
+      onDoubleClick={onDoubleClick}
       className={`p-3 rounded-lg cursor-pointer transition-colors ${
         isSelected
           ? 'bg-krt-accent/10 border border-krt-accent/30'
@@ -156,11 +299,25 @@ function UnitListItem({ unit, group, isSelected }) {
       }`}
     >
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium truncate">{unit.name}</span>
-        <StatusBadge status={unit.status} />
+        <span className="text-sm font-medium truncate">{unit.callsign ? `[${unit.callsign}] ` : ''}{unit.name}</span>
+        <div className="flex items-center gap-1">
+          {/* Resource warnings */}
+          {unit.fuel != null && unit.fuel <= 25 && <span className="text-[10px]" title={`Fuel: ${unit.fuel}%`}>⛽</span>}
+          {unit.ammo != null && unit.ammo <= 25 && <span className="text-[10px]" title={`Ammo: ${unit.ammo}%`}>💨</span>}
+          {unit.hull != null && unit.hull <= 25 && <span className="text-[10px]" title={`Hull: ${unit.hull}%`}>🔧</span>}
+          <button
+            onClick={(e) => { e.stopPropagation(); focusUnit(unit.id); }}
+            className="text-gray-500 hover:text-krt-accent text-xs"
+            title="Focus on map"
+          >
+            🎯
+          </button>
+          <StatusBadge status={unit.status} />
+        </div>
       </div>
       <div className="text-xs text-gray-500 mt-1">
         {unit.ship_type || 'Unknown ship'} {group && `• ${group.name}`}
+        {unit.role && <span className="ml-1 text-gray-600">({unit.role})</span>}
       </div>
     </div>
   );
@@ -205,8 +362,21 @@ function StatusBadge({ status }) {
 /** Create unit form */
 function CreateUnitForm({ teamId, groups, onClose }) {
   const [name, setName] = useState('');
+  const [callsign, setCallsign] = useState('');
   const [shipType, setShipType] = useState('');
+  const [unitType, setUnitType] = useState('ship');
   const [groupId, setGroupId] = useState('');
+  const [role, setRole] = useState('');
+  const [crewCount, setCrewCount] = useState(1);
+  const [crewMax, setCrewMax] = useState('');
+
+  const UNIT_TYPES = [
+    { value: 'ship', label: '🚀 Ship' },
+    { value: 'ground_vehicle', label: '🚗 Ground Vehicle' },
+    { value: 'squad', label: '👥 Squad' },
+    { value: 'person', label: '🧑 Person' },
+    { value: 'marker', label: '📌 Marker' },
+  ];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -218,9 +388,14 @@ function CreateUnitForm({ teamId, groups, onClose }) {
       credentials: 'include',
       body: JSON.stringify({
         name: name.trim(),
+        callsign: callsign || null,
         ship_type: shipType || null,
+        unit_type: unitType,
         team_id: teamId,
         group_id: groupId || null,
+        role: role || null,
+        crew_count: crewCount,
+        crew_max: crewMax ? parseInt(crewMax) : null,
       }),
     });
 
@@ -231,31 +406,78 @@ function CreateUnitForm({ teamId, groups, onClose }) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-krt-bg/80 rounded-lg p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Unit name *"
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
+          autoFocus
+        />
+        <input
+          type="text"
+          value={callsign}
+          onChange={(e) => setCallsign(e.target.value)}
+          placeholder="Callsign (e.g. Alpha-1)"
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={unitType}
+          onChange={(e) => setUnitType(e.target.value)}
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+        >
+          {UNIT_TYPES.map((ut) => (
+            <option key={ut.value} value={ut.value}>{ut.label}</option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={shipType}
+          onChange={(e) => setShipType(e.target.value)}
+          placeholder="Ship type (e.g. Carrack)"
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
+        />
+      </div>
       <input
         type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Unit name"
-        className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
-        autoFocus
-      />
-      <input
-        type="text"
-        value={shipType}
-        onChange={(e) => setShipType(e.target.value)}
-        placeholder="Ship type (e.g. Carrack)"
+        value={role}
+        onChange={(e) => setRole(e.target.value)}
+        placeholder="Role (e.g. Fighter escort, Medical)"
         className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
       />
-      <select
-        value={groupId}
-        onChange={(e) => setGroupId(e.target.value)}
-        className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
-      >
-        <option value="">No group</option>
-        {groups.map((g) => (
-          <option key={g.id} value={g.id}>{g.name}</option>
-        ))}
-      </select>
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={groupId}
+          onChange={(e) => setGroupId(e.target.value)}
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+        >
+          <option value="">No group</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+        <div className="flex gap-1">
+          <input
+            type="number"
+            value={crewCount}
+            onChange={(e) => setCrewCount(Math.max(0, parseInt(e.target.value) || 0))}
+            placeholder="Crew"
+            min={0}
+            className="w-full bg-krt-panel border border-krt-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+          />
+          <input
+            type="number"
+            value={crewMax}
+            onChange={(e) => setCrewMax(e.target.value)}
+            placeholder="Max"
+            min={0}
+            className="w-full bg-krt-panel border border-krt-border rounded px-2 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
+          />
+        </div>
+      </div>
       <div className="flex gap-2">
         <button type="submit" className="bg-krt-accent text-white text-sm px-3 py-1 rounded">
           Create
@@ -353,6 +575,127 @@ function BatchStatusUpdate({ unitIds, teamId }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** IFF color map */
+const IFF_COLORS = {
+  friendly: { bg: 'bg-green-500/20', border: 'border-green-500/30', text: 'text-green-400', dot: 'bg-green-500' },
+  hostile: { bg: 'bg-red-500/20', border: 'border-red-500/30', text: 'text-red-400', dot: 'bg-red-500' },
+  neutral: { bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', text: 'text-yellow-400', dot: 'bg-yellow-500' },
+  unknown: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400', dot: 'bg-purple-500' },
+};
+
+/** Contact list item */
+function ContactListItem({ contact, inactive }) {
+  const handleDeactivate = async () => {
+    await fetch(`/api/contacts/${contact.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ is_active: !contact.is_active }),
+    });
+  };
+
+  const handleDelete = async () => {
+    await fetch(`/api/contacts/${contact.id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+  };
+
+  const colors = IFF_COLORS[contact.iff] || IFF_COLORS.unknown;
+
+  return (
+    <div className={`p-3 rounded-lg border ${inactive ? 'opacity-50' : ''} ${colors.bg} ${colors.border}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className={`w-2 h-2 rounded-full ${colors.dot}`} />
+          <span className={`text-xs font-bold uppercase ${colors.text}`}>{contact.iff}</span>
+          {contact.threat !== 'none' && (
+            <span className="text-xs text-red-400">⚠{contact.threat}</span>
+          )}
+          {contact.confidence && contact.confidence !== 'confirmed' && (
+            <span className="text-[10px] text-gray-500 bg-krt-bg px-1 rounded">{contact.confidence}</span>
+          )}
+        </div>
+        <div className="flex gap-1">
+          <button onClick={handleDeactivate} className="text-xs text-gray-500 hover:text-white" title={contact.is_active ? 'Mark inactive' : 'Reactivate'}>
+            {contact.is_active ? '👁' : '👁‍🗨'}
+          </button>
+          <button onClick={handleDelete} className="text-xs text-gray-500 hover:text-red-400" title="Delete">✕</button>
+        </div>
+      </div>
+      <div className="text-sm text-white mt-0.5">
+        {contact.name || 'Unknown'} {contact.count > 1 && `×${contact.count}`}
+      </div>
+      <div className="text-xs text-gray-500">
+        {contact.ship_type || 'Unknown ship'} • ({contact.pos_x?.toFixed(0)}, {contact.pos_y?.toFixed(0)}, {contact.pos_z?.toFixed(0)})
+      </div>
+      {contact.notes && (
+        <div className="text-xs text-gray-400 mt-1 italic">{contact.notes}</div>
+      )}
+    </div>
+  );
+}
+
+/** Priority color map */
+const PRIORITY_COLORS_MAP = {
+  low: { bg: 'bg-gray-500/10', border: 'border-gray-500/20', badge: 'bg-gray-600' },
+  normal: { bg: 'bg-blue-500/10', border: 'border-blue-500/20', badge: 'bg-blue-600' },
+  high: { bg: 'bg-yellow-500/10', border: 'border-yellow-500/20', badge: 'bg-yellow-600' },
+  critical: { bg: 'bg-red-500/10', border: 'border-red-500/20', badge: 'bg-red-600' },
+};
+
+const TASK_STATUS_OPTIONS = ['pending', 'assigned', 'in_progress', 'completed', 'cancelled'];
+
+/** Task list item */
+function TaskListItem({ task, completed }) {
+  const handleStatusChange = async (newStatus) => {
+    await fetch(`/api/tasks/${task.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ status: newStatus }),
+    });
+  };
+
+  const colors = PRIORITY_COLORS_MAP[task.priority] || PRIORITY_COLORS_MAP.normal;
+
+  return (
+    <div className={`p-3 rounded-lg border ${completed ? 'opacity-50' : ''} ${colors.bg} ${colors.border}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <span className={`text-xs px-1.5 py-0.5 rounded ${colors.badge} text-white`}>{task.priority}</span>
+          {task.task_type && task.task_type !== 'custom' && (
+            <span className="text-[10px] text-gray-400 bg-krt-bg px-1 rounded">{task.task_type}</span>
+          )}
+        </div>
+        <span className="text-xs text-gray-500">{task.status}</span>
+      </div>
+      <div className={`text-sm text-white mt-1 ${completed ? 'line-through' : ''}`}>{task.title}</div>
+      {task.description && (
+        <div className="text-xs text-gray-400 mt-0.5 line-clamp-2">{task.description}</div>
+      )}
+      {(task.assigned_unit_name || task.assigned_group_name) && (
+        <div className="text-xs text-gray-500 mt-1">
+          → {task.assigned_unit_name || task.assigned_group_name}
+        </div>
+      )}
+      {!completed && (
+        <div className="flex gap-1 mt-2">
+          {TASK_STATUS_OPTIONS.filter(s => s !== task.status).map((s) => (
+            <button
+              key={s}
+              onClick={() => handleStatusChange(s)}
+              className="text-xs px-1.5 py-0.5 rounded bg-krt-panel border border-krt-border hover:border-krt-accent transition-colors"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

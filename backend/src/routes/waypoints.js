@@ -6,6 +6,8 @@ const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
 const { broadcastToTeam } = require('../socket');
+const { validate } = require('../validation/middleware');
+const { schemas } = require('../validation/schemas');
 
 // List waypoints for a unit
 router.get('/', requireAuth, async (req, res, next) => {
@@ -26,7 +28,7 @@ router.get('/', requireAuth, async (req, res, next) => {
 });
 
 // Create waypoint
-router.post('/', requireAuth, async (req, res, next) => {
+router.post('/', requireAuth, validate(schemas.createWaypoint), async (req, res, next) => {
   try {
     const { unit_id, pos_x, pos_y, pos_z, sequence, label } = req.body;
     if (!unit_id) return res.status(400).json({ error: 'unit_id is required' });

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { useMissionStore } from '../stores/missionStore';
@@ -24,47 +24,133 @@ const MISSION_ICONS = {
   CUSTOM: '📌',
 };
 
+// Shared plane for raycasting during drag
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const intersection = new THREE.Vector3();
+
 /**
  * 3D marker for a single unit/ship on the map
  */
-export default function UnitMarker({ unit, group, isSelected }) {
+export default function UnitMarker({ unit, group, isSelected, onDragStart, onDragEnd }) {
   const meshRef = useRef();
+  const groupRef = useRef();
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const { toggleSelectUnit } = useMissionStore();
+  const dragStartPos = useRef(null);
+  const { toggleSelectUnit, updateUnit } = useMissionStore();
 
   const color = group?.color || STATUS_COLORS[unit.status] || '#6b7280';
   const markerSize = isSelected ? 12 : 8;
 
   // Pulse animation for selected units
   useFrame((state) => {
-    if (meshRef.current && isSelected) {
+    if (meshRef.current && isSelected && !dragging) {
       const scale = 1 + Math.sin(state.clock.elapsedTime * 3) * 0.15;
       meshRef.current.scale.setScalar(scale);
-    } else if (meshRef.current) {
+    } else if (meshRef.current && !dragging) {
       meshRef.current.scale.setScalar(1);
     }
   });
 
-  const handleClick = (e) => {
+  const handlePointerDown = useCallback((e) => {
     e.stopPropagation();
-    toggleSelectUnit(unit.id);
-  };
+    // Set the drag plane at the unit's Y level
+    dragPlane.set(new THREE.Vector3(0, 1, 0), -unit.pos_y);
+    dragStartPos.current = { x: unit.pos_x, z: unit.pos_z, pointerId: e.pointerId };
+    setDragging(true);
+    e.target.setPointerCapture(e.pointerId);
+    onDragStart?.();
+  }, [unit.pos_x, unit.pos_y, unit.pos_z, onDragStart]);
+
+  const handlePointerMove = useCallback((e) => {
+    if (!dragging) return;
+    e.stopPropagation();
+    // Raycast against the drag plane
+    const ray = e.ray;
+    if (ray && ray.intersectPlane(dragPlane, intersection)) {
+      const newX = intersection.x;
+      const newZ = intersection.z;
+      // Update local position immediately for smooth dragging
+      if (groupRef.current) {
+        groupRef.current.position.x = newX;
+        groupRef.current.position.z = newZ;
+      }
+      // Emit real-time move to other clients (throttled by socket)
+      emitUnitMove({
+        id: unit.id,
+        team_id: unit.team_id,
+        pos_x: newX,
+        pos_y: unit.pos_y,
+        pos_z: newZ,
+      });
+    }
+  }, [dragging, unit.id, unit.team_id, unit.pos_y]);
+
+  const handlePointerUp = useCallback(async (e) => {
+    if (!dragging) return;
+    e.stopPropagation();
+    setDragging(false);
+    onDragEnd?.();
+
+    // Get final position from the group ref
+    const finalX = groupRef.current?.position.x ?? unit.pos_x;
+    const finalZ = groupRef.current?.position.z ?? unit.pos_z;
+
+    // Only persist if position actually moved
+    const dx = finalX - (dragStartPos.current?.x ?? unit.pos_x);
+    const dz = finalZ - (dragStartPos.current?.z ?? unit.pos_z);
+    if (Math.abs(dx) < 0.1 && Math.abs(dz) < 0.1) {
+      // Didn't move enough — treat as click
+      toggleSelectUnit(unit.id);
+      return;
+    }
+
+    // Persist the new position via REST
+    try {
+      const res = await fetch(`/api/units/${unit.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pos_x: finalX, pos_y: unit.pos_y, pos_z: finalZ }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        updateUnit(updated);
+      }
+    } catch {
+      // Revert on failure
+      if (groupRef.current) {
+        groupRef.current.position.set(unit.pos_x, unit.pos_y, unit.pos_z);
+      }
+    }
+    dragStartPos.current = null;
+  }, [dragging, unit, toggleSelectUnit, updateUnit, onDragEnd]);
+
+  const handleClick = useCallback((e) => {
+    e.stopPropagation();
+    // Click is handled by pointerUp when drag distance is small
+  }, []);
 
   return (
-    <group position={[unit.pos_x, unit.pos_y, unit.pos_z]}>
+    <group
+      ref={groupRef}
+      position={[unit.pos_x, unit.pos_y, unit.pos_z]}
+    >
       {/* Unit marker (diamond shape) */}
       <mesh
         ref={meshRef}
         onClick={handleClick}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
         onPointerOver={() => setHovered(true)}
-        onPointerOut={() => setHovered(false)}
+        onPointerOut={() => { if (!dragging) setHovered(false); }}
       >
         <octahedronGeometry args={[markerSize, 0]} />
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={isSelected ? 0.8 : hovered ? 0.5 : 0.2}
+          emissiveIntensity={dragging ? 1.0 : isSelected ? 0.8 : hovered ? 0.5 : 0.2}
           transparent
           opacity={unit.status === 'disabled' ? 0.4 : 0.9}
         />

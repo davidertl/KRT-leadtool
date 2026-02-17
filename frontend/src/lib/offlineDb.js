@@ -13,6 +13,15 @@ db.version(1).stores({
   syncMeta: 'key',
 });
 
+db.version(2).stores({
+  units: 'id, team_id, group_id, owner_id, status, updated_at',
+  groups: 'id, team_id, mission',
+  waypoints: 'id, unit_id, sequence',
+  contacts: 'id, team_id, iff, is_active, updated_at',
+  tasks: 'id, team_id, status, priority, updated_at',
+  syncMeta: 'key',
+});
+
 /**
  * Save the last sync timestamp for a team
  */

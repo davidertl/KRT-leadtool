@@ -1,22 +1,72 @@
-import React, { useRef, useCallback } from 'react';
-import { Canvas } from '@react-three/fiber';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars, Grid, Html } from '@react-three/drei';
 import { useMissionStore } from '../stores/missionStore';
 import UnitMarker from './UnitMarker';
 import WaypointLine from './WaypointLine';
+import ContactMarker from './ContactMarker';
+import TaskMarker from './TaskMarker';
+import { CelestialBodyMarker, NavPointMarker } from './NavPointMarker';
+import * as THREE from 'three';
 
 /**
- * Main 3D space map component using React Three Fiber
+ * Camera controller that handles focus-on-unit animation
  */
-export default function SpaceMap() {
-  const { units, groups, waypoints, selectedUnitIds } = useMissionStore();
+function CameraFocus({ controlsRef }) {
+  const { camera } = useThree();
+  const { focusedUnitId, units, clearFocus } = useMissionStore();
+  const targetPos = useRef(null);
+  const animating = useRef(false);
+
+  useEffect(() => {
+    if (!focusedUnitId) return;
+    const unit = units.find((u) => u.id === focusedUnitId);
+    if (!unit) return;
+
+    // Set target for camera to animate toward
+    targetPos.current = new THREE.Vector3(unit.pos_x, unit.pos_y + 200, unit.pos_z + 200);
+    if (controlsRef.current) {
+      controlsRef.current.target.set(unit.pos_x, unit.pos_y, unit.pos_z);
+    }
+    animating.current = true;
+
+    // Clear focus after a brief period
+    const timeout = setTimeout(() => {
+      clearFocus();
+      animating.current = false;
+    }, 1500);
+    return () => clearTimeout(timeout);
+  }, [focusedUnitId]);
+
+  useFrame(() => {
+    if (!animating.current || !targetPos.current) return;
+    camera.position.lerp(targetPos.current, 0.05);
+    controlsRef.current?.update();
+  });
+
+  return null;
+}
+
+/**
+ * Inner scene component — must be inside <Canvas> to use R3F hooks
+ */
+function SceneContents() {
+  const { units, groups, waypoints, contacts, tasks, navData, selectedUnitIds } = useMissionStore();
   const controlsRef = useRef();
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragStart = useCallback(() => {
+    setIsDragging(true);
+    if (controlsRef.current) controlsRef.current.enabled = false;
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+    if (controlsRef.current) controlsRef.current.enabled = true;
+  }, []);
 
   return (
-    <Canvas
-      camera={{ position: [0, 500, 500], fov: 60, near: 0.1, far: 100000 }}
-      style={{ background: '#0a0e1a' }}
-    >
+    <>
       {/* Lighting */}
       <ambientLight intensity={0.3} />
       <directionalLight position={[100, 200, 100]} intensity={0.8} />
@@ -47,6 +97,8 @@ export default function SpaceMap() {
             unit={unit}
             group={group}
             isSelected={selectedUnitIds.includes(unit.id)}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
           />
         );
       })}
@@ -58,11 +110,34 @@ export default function SpaceMap() {
         return <WaypointLine key={`wp-${unit.id}`} unit={unit} waypoints={unitWaypoints} />;
       })}
 
+      {/* Contact markers (IFF) */}
+      {contacts.filter((c) => c.is_active).map((contact) => (
+        <ContactMarker key={`contact-${contact.id}`} contact={contact} />
+      ))}
+
+      {/* Task target markers */}
+      {tasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled' && t.target_x != null).map((task) => (
+        <TaskMarker key={`task-${task.id}`} task={task} />
+      ))}
+
+      {/* Celestial bodies (stars, planets, moons) */}
+      {navData.bodies?.map((body) => (
+        <CelestialBodyMarker key={`body-${body.id}`} body={body} />
+      ))}
+
+      {/* Navigation points (stations, OMs, lagrange, etc.) */}
+      {navData.points?.map((point) => (
+        <NavPointMarker key={`nav-${point.id}`} point={point} />
+      ))}
+
       {/* Origin marker */}
       <mesh position={[0, 0, 0]}>
         <sphereGeometry args={[5, 16, 16]} />
         <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={0.5} />
       </mesh>
+
+      {/* Camera focus animation */}
+      <CameraFocus controlsRef={controlsRef} />
 
       {/* Camera controls */}
       <OrbitControls
@@ -81,6 +156,20 @@ export default function SpaceMap() {
           TWO: 2, // DOLLY_PAN
         }}
       />
+    </>
+  );
+}
+
+/**
+ * Main 3D space map component using React Three Fiber
+ */
+export default function SpaceMap() {
+  return (
+    <Canvas
+      camera={{ position: [0, 500, 500], fov: 60, near: 0.1, far: 100000 }}
+      style={{ background: '#0a0e1a' }}
+    >
+      <SceneContents />
     </Canvas>
   );
 }

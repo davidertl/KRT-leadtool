@@ -5,10 +5,13 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
+const { requireTeamMember } = require('../auth/teamAuth');
 const { broadcastToTeam } = require('../socket');
+const { validate } = require('../validation/middleware');
+const { schemas } = require('../validation/schemas');
 
 // List groups in a team
-router.get('/', requireAuth, async (req, res, next) => {
+router.get('/', requireAuth, requireTeamMember, async (req, res, next) => {
   try {
     const { team_id } = req.query;
     if (!team_id) return res.status(400).json({ error: 'team_id query parameter required' });
@@ -28,7 +31,7 @@ router.get('/', requireAuth, async (req, res, next) => {
 });
 
 // Create group
-router.post('/', requireAuth, async (req, res, next) => {
+router.post('/', requireAuth, validate(schemas.createGroup), requireTeamMember, async (req, res, next) => {
   try {
     const { name, team_id, mission, color, icon } = req.body;
     if (!name || !team_id) return res.status(400).json({ error: 'name and team_id are required' });
@@ -46,7 +49,7 @@ router.post('/', requireAuth, async (req, res, next) => {
 });
 
 // Update group
-router.put('/:id', requireAuth, async (req, res, next) => {
+router.put('/:id', requireAuth, validate(schemas.updateGroup), async (req, res, next) => {
   try {
     const { name, mission, color, icon } = req.body;
 

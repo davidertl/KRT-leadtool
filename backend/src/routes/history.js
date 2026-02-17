@@ -43,6 +43,12 @@ router.post('/:unit_id/undo', requireAuth, async (req, res, next) => {
     const entry = histResult.rows[0];
     const oldValue = JSON.parse(entry.old_value);
 
+    // Whitelist allowed fields to prevent SQL injection
+    const ALLOWED_FIELDS = ['status', 'group_id', 'pos_x', 'pos_y', 'pos_z', 'heading', 'name', 'ship_type', 'notes'];
+    if (!ALLOWED_FIELDS.includes(entry.field_changed)) {
+      return res.status(400).json({ error: 'Cannot revert this field' });
+    }
+
     // Revert the field
     const revertResult = await query(
       `UPDATE units SET ${entry.field_changed} = $1 WHERE id = $2 RETURNING *`,

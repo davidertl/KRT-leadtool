@@ -5,10 +5,13 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
+const { requireTeamMember } = require('../auth/teamAuth');
 const { broadcastToTeam } = require('../socket');
+const { validate } = require('../validation/middleware');
+const { schemas } = require('../validation/schemas');
 
 // List units in a team
-router.get('/', requireAuth, async (req, res, next) => {
+router.get('/', requireAuth, requireTeamMember, async (req, res, next) => {
   try {
     const { team_id, group_id, status } = req.query;
     if (!team_id) return res.status(400).json({ error: 'team_id query parameter required' });
@@ -50,17 +53,22 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // Create unit
-router.post('/', requireAuth, async (req, res, next) => {
+router.post('/', requireAuth, validate(schemas.createUnit), requireTeamMember, async (req, res, next) => {
   try {
-    const { name, ship_type, team_id, group_id, pos_x, pos_y, pos_z, heading, status, notes } = req.body;
+    const { name, callsign, ship_type, unit_type, team_id, group_id, role, crew_count, crew_max,
+            pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes } = req.body;
     if (!name || !team_id) return res.status(400).json({ error: 'name and team_id are required' });
 
     const result = await query(
-      `INSERT INTO units (name, ship_type, owner_id, team_id, group_id, pos_x, pos_y, pos_z, heading, status, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO units (name, callsign, ship_type, unit_type, owner_id, team_id, group_id, role, crew_count, crew_max,
+                          pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING *`,
-      [name, ship_type || null, req.user.id, team_id, group_id || null,
-       pos_x || 0, pos_y || 0, pos_z || 0, heading || 0, status || 'idle', notes || null]
+      [name, callsign || null, ship_type || null, unit_type || 'ship', req.user.id, team_id, group_id || null,
+       role || null, crew_count || 1, crew_max || null,
+       pos_x || 0, pos_y || 0, pos_z || 0, heading || 0,
+       fuel ?? 100, ammo ?? 100, hull ?? 100,
+       status || 'idle', roe || 'weapons_tight', notes || null]
     );
 
     broadcastToTeam(team_id, 'unit:created', result.rows[0]);
@@ -69,29 +77,32 @@ router.post('/', requireAuth, async (req, res, next) => {
 });
 
 // Update unit (position, status, group, etc.)
-router.put('/:id', requireAuth, async (req, res, next) => {
+router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, next) => {
   try {
-    const { name, ship_type, group_id, pos_x, pos_y, pos_z, heading, status, notes } = req.body;
+    const { name, callsign, ship_type, unit_type, group_id, role, crew_count, crew_max,
+            pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes } = req.body;
 
     // Fetch old values for history
     const oldResult = await query('SELECT * FROM units WHERE id = $1', [req.params.id]);
     if (oldResult.rows.length === 0) return res.status(404).json({ error: 'Unit not found' });
     const oldUnit = oldResult.rows[0];
 
+    // Build dynamic SET clause — only update fields that were explicitly sent
+    const fields = [];
+    const values = [];
+    const bodyFields = { name, callsign, ship_type, unit_type, group_id, role, crew_count, crew_max,
+                         pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes };
+    for (const [key, val] of Object.entries(bodyFields)) {
+      if (val !== undefined) {
+        values.push(val);
+        fields.push(`${key} = $${values.length}`);
+      }
+    }
+    if (fields.length === 0) return res.json(oldUnit); // nothing to update
+    values.push(req.params.id);
     const result = await query(
-      `UPDATE units SET
-         name = COALESCE($1, name),
-         ship_type = COALESCE($2, ship_type),
-         group_id = COALESCE($3, group_id),
-         pos_x = COALESCE($4, pos_x),
-         pos_y = COALESCE($5, pos_y),
-         pos_z = COALESCE($6, pos_z),
-         heading = COALESCE($7, heading),
-         status = COALESCE($8, status),
-         notes = COALESCE($9, notes)
-       WHERE id = $10
-       RETURNING *`,
-      [name, ship_type, group_id, pos_x, pos_y, pos_z, heading, status, notes, req.params.id]
+      `UPDATE units SET ${fields.join(', ')} WHERE id = $${values.length} RETURNING *`,
+      values
     );
 
     const newUnit = result.rows[0];
@@ -128,7 +139,7 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
 });
 
 // Batch update positions (for drag & drop multiple units)
-router.patch('/batch-position', requireAuth, async (req, res, next) => {
+router.patch('/batch-position', requireAuth, validate(schemas.batchPosition), async (req, res, next) => {
   try {
     const { updates } = req.body; // [{ id, pos_x, pos_y, pos_z, heading }]
     if (!Array.isArray(updates) || updates.length === 0) {

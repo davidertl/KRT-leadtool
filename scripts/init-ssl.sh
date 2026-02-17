@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
 # SSL Initialization Script for KRT-Leadtool
-# Generates a temporary self-signed cert so nginx can start,
-# then requests a real Let's Encrypt certificate via Certbot.
-# 
+# Requests a Let's Encrypt certificate via Certbot using standalone mode
+# (temporarily stops nginx), then restarts everything.
+#
 # Usage: ./scripts/init-ssl.sh lead.das-krt.com your@email.com
 # =============================================================================
 
@@ -17,38 +17,25 @@ echo "Domain: $DOMAIN"
 echo "Email:  $EMAIL"
 echo ""
 
-# Step 1: Create a temporary self-signed cert so nginx can start with the HTTPS config
-echo "[1/4] Generating temporary self-signed certificate..."
-docker compose run --rm --entrypoint "" certbot sh -c "
-  mkdir -p /etc/letsencrypt/live/$DOMAIN
-  openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
-    -keyout /etc/letsencrypt/live/$DOMAIN/privkey.pem \
-    -out /etc/letsencrypt/live/$DOMAIN/fullchain.pem \
-    -subj '/CN=$DOMAIN'
-  echo 'Temporary self-signed cert created.'
-"
+# Step 1: Stop nginx so certbot can use port 80
+echo "[1/3] Stopping nginx (if running)..."
+docker compose stop nginx 2>/dev/null || true
 
-# Step 2: Start nginx (it can now load the self-signed cert)
-echo "[2/4] Starting nginx with temporary cert..."
-docker compose up -d nginx
-
-# Wait for nginx to be ready
-sleep 3
-
-# Step 3: Request real Let's Encrypt certificate
-echo "[3/4] Requesting Let's Encrypt certificate..."
-docker compose run --rm certbot certonly \
-  --webroot \
-  -w /var/www/certbot \
+# Step 2: Request certificate using standalone mode (no nginx needed)
+echo "[2/3] Requesting Let's Encrypt certificate..."
+docker run --rm -p 80:80 \
+  -v krt-leadtool_certbot-certs:/etc/letsencrypt \
+  -v krt-leadtool_certbot-webroot:/var/www/certbot \
+  certbot/certbot certonly \
+  --standalone \
   -d "$DOMAIN" \
   --email "$EMAIL" \
   --agree-tos \
-  --no-eff-email \
-  --force-renewal
+  --no-eff-email
 
-# Step 4: Reload nginx to use the real cert
-echo "[4/4] Reloading nginx with real certificate..."
-docker compose exec nginx nginx -s reload
+# Step 3: Start everything
+echo "[3/3] Starting all services..."
+docker compose up -d
 
 echo ""
 echo "=== Done! ==="

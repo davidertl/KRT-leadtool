@@ -2,9 +2,26 @@
  * Socket.IO client wrapper with auto-reconnect and offline handling
  */
 import { io } from 'socket.io-client';
+import toast from 'react-hot-toast';
 import { useMissionStore } from '../stores/missionStore';
 
 let socket = null;
+let connectionStatus = 'disconnected'; // 'connected' | 'disconnected' | 'reconnecting'
+const statusListeners = new Set();
+
+export function onConnectionStatusChange(cb) {
+  statusListeners.add(cb);
+  return () => statusListeners.delete(cb);
+}
+
+export function getConnectionStatus() {
+  return connectionStatus;
+}
+
+function setStatus(s) {
+  connectionStatus = s;
+  statusListeners.forEach((cb) => cb(s));
+}
 
 export function connectSocket(teamId) {
   if (socket?.connected) {
@@ -25,6 +42,8 @@ export function connectSocket(teamId) {
 
   socket.on('connect', () => {
     console.log('[KRT] WebSocket connected');
+    setStatus('connected');
+    toast.success('Connected to server');
     socket.emit('team:join', teamId);
 
     // Delta sync on reconnect
@@ -36,6 +55,8 @@ export function connectSocket(teamId) {
           const store = useMissionStore.getState();
           if (data.units?.length) data.units.forEach((u) => store.updateUnit(u));
           if (data.groups?.length) data.groups.forEach((g) => store.updateGroup(g));
+          if (data.contacts?.length) data.contacts.forEach((c) => store.updateContact(c));
+          if (data.tasks?.length) data.tasks.forEach((t) => store.updateTask(t));
           store.setLastSyncTime(data.server_time);
         })
         .catch(() => {});
@@ -44,6 +65,12 @@ export function connectSocket(teamId) {
 
   socket.on('disconnect', () => {
     console.log('[KRT] WebSocket disconnected');
+    setStatus('disconnected');
+    toast.error('Disconnected — reconnecting…');
+  });
+
+  socket.io.on('reconnect_attempt', () => {
+    setStatus('reconnecting');
   });
 
   // Real-time event handlers
@@ -58,6 +85,28 @@ export function connectSocket(teamId) {
 
   socket.on('waypoint:created', (wp) => useMissionStore.getState().addWaypoint(wp));
   socket.on('waypoint:deleted', ({ id }) => useMissionStore.getState().removeWaypoint(id));
+  socket.on('waypoints:cleared', ({ unit_id }) => useMissionStore.getState().clearWaypoints(unit_id));
+
+  // Contact events
+  socket.on('contact:created', (contact) => useMissionStore.getState().addContact(contact));
+  socket.on('contact:updated', (contact) => useMissionStore.getState().updateContact(contact));
+  socket.on('contact:deleted', ({ id }) => useMissionStore.getState().removeContact(id));
+
+  // Task events
+  socket.on('task:created', (task) => useMissionStore.getState().addTask(task));
+  socket.on('task:updated', (task) => useMissionStore.getState().updateTask(task));
+  socket.on('task:deleted', ({ id }) => useMissionStore.getState().removeTask(id));
+
+  // Operation events
+  socket.on('operation:created', (op) => useMissionStore.getState().addOperation(op));
+  socket.on('operation:updated', (op) => useMissionStore.getState().updateOperation(op));
+  socket.on('operation:deleted', ({ id }) => useMissionStore.getState().removeOperation(id));
+
+  // Event log
+  socket.on('event:created', (event) => useMissionStore.getState().addEvent(event));
+
+  // Quick messages
+  socket.on('message:created', (msg) => useMissionStore.getState().addMessage(msg));
 
   socket.on('team:online', (users) => useMissionStore.getState().setOnlineUsers(users));
 
@@ -68,6 +117,7 @@ export function disconnectSocket() {
   if (socket) {
     socket.disconnect();
     socket = null;
+    setStatus('disconnected');
   }
 }
 

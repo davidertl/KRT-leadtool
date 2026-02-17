@@ -5,12 +5,13 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
+const { requireTeamMember } = require('../auth/teamAuth');
 
 /**
  * GET /api/sync?team_id=...&since=ISO8601
  * Returns all changes since a given timestamp for delta sync on reconnect.
  */
-router.get('/', requireAuth, async (req, res, next) => {
+router.get('/', requireAuth, requireTeamMember, async (req, res, next) => {
   try {
     const { team_id, since } = req.query;
     if (!team_id) return res.status(400).json({ error: 'team_id required' });
@@ -48,12 +49,26 @@ router.get('/', requireAuth, async (req, res, next) => {
       );
     }
 
+    // Fetch updated contacts
+    const contacts = await query(
+      `SELECT * FROM contacts WHERE team_id = $1 AND updated_at > $2 ORDER BY updated_at ASC`,
+      [team_id, sinceDate]
+    );
+
+    // Fetch updated tasks
+    const tasks = await query(
+      `SELECT * FROM tasks WHERE team_id = $1 AND updated_at > $2 ORDER BY updated_at ASC`,
+      [team_id, sinceDate]
+    );
+
     res.json({
       server_time: new Date().toISOString(),
       units: units.rows,
       groups: groups.rows,
       waypoints: waypoints.rows,
       history: history.rows,
+      contacts: contacts.rows,
+      tasks: tasks.rows,
     });
   } catch (err) { next(err); }
 });

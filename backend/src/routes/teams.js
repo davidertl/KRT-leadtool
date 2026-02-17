@@ -5,6 +5,8 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth, requireRole } = require('../auth/jwt');
+const { validate } = require('../validation/middleware');
+const { schemas } = require('../validation/schemas');
 
 // List teams the user belongs to
 router.get('/', requireAuth, async (req, res, next) => {
@@ -37,7 +39,7 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // Create team
-router.post('/', requireAuth, async (req, res, next) => {
+router.post('/', requireAuth, validate(schemas.createTeam), async (req, res, next) => {
   try {
     const { name, description, settings } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
@@ -60,7 +62,7 @@ router.post('/', requireAuth, async (req, res, next) => {
 });
 
 // Update team
-router.put('/:id', requireAuth, async (req, res, next) => {
+router.put('/:id', requireAuth, validate(schemas.updateTeam), async (req, res, next) => {
   try {
     const { name, description, settings } = req.body;
     const result = await query(
