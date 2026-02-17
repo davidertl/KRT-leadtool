@@ -1,0 +1,45 @@
+# ================================================
+# KRT-Leadtool Backend Dockerfile
+# Multi-stage build: Node.js 20 Alpine
+# ================================================
+
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies first (layer caching)
+COPY backend/package.json backend/package-lock.json* ./
+RUN npm ci --production
+
+# Copy source code
+COPY backend/src ./src
+
+# ================================================
+# Production stage
+# ================================================
+FROM node:20-alpine
+
+# Security: run as non-root
+RUN addgroup -g 1001 -S krt && \
+    adduser -S krt -u 1001 -G krt
+
+WORKDIR /app
+
+# Copy node_modules and source from builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/src ./src
+COPY backend/package.json ./
+
+# Set ownership
+RUN chown -R krt:krt /app
+
+USER krt
+
+EXPOSE 3000
+
+ENV NODE_ENV=production
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+
+CMD ["node", "src/index.js"]

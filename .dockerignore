@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Environment
+.env
+.env.*
+example.env
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+LICENSE
+localdoc/
+GeneralPlan.md
+
+# Editor / IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Server data (not needed in images)
+data/
+backups/
+scripts/
+nginx/ssl/
+nginx/webroot/
+
+# OS
+.DS_Store
+Thumbs.db

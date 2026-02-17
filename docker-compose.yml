@@ -1,0 +1,230 @@
+# KRT-Leadtool Docker Compose Stack
+# Usage: docker compose up -d
+# Requires: .env file (copy from example.env)
+
+services:
+  # ============================================================
+  # Nginx - Reverse Proxy + SSL + Static Frontend
+  # ============================================================
+  nginx:
+    image: nginx:alpine
+    container_name: krt-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/webroot:/var/www/certbot:ro
+      - frontend-build:/usr/share/nginx/html:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - krt-public
+      - krt-internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================
+  # Backend - Node.js + Express + Socket.IO
+  # ============================================================
+  backend:
+    image: ghcr.io/davidertl/krt-leadtool-backend:latest
+    container_name: krt-backend
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - APP_PORT=${APP_PORT}
+      - APP_URL=${APP_URL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - VALKEY_HOST=${VALKEY_HOST}
+      - VALKEY_PORT=${VALKEY_PORT}
+      - VALKEY_PASSWORD=${VALKEY_PASSWORD}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+      - DISCORD_CALLBACK_URL=${DISCORD_CALLBACK_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRY=${JWT_EXPIRY}
+      - SESSION_SECRET=${SESSION_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    networks:
+      - krt-internal
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================================
+  # Frontend - React + Three.js (build stage, output to volume)
+  # ============================================================
+  frontend:
+    image: ghcr.io/davidertl/krt-leadtool-frontend:latest
+    container_name: krt-frontend
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    volumes:
+      - frontend-build:/app/dist
+    # Runs once to copy build output into the shared volume, then exits
+    entrypoint: ["/bin/sh", "-c", "cp -r /app/dist/* /app/dist/ 2>/dev/null; echo 'Frontend build copied'; sleep infinity"]
+    restart: unless-stopped
+    networks:
+      - krt-internal
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================================
+  # PostgreSQL + PostGIS
+  # ============================================================
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: krt-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - krt-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      postgres
+        -c shared_buffers=256MB
+        -c effective_cache_size=1GB
+        -c work_mem=4MB
+        -c max_connections=50
+        -c wal_buffers=16MB
+        -c checkpoint_completion_target=0.9
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================================
+  # Valkey (open-source Redis replacement, BSD-3 license)
+  # ============================================================
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: krt-valkey
+    restart: unless-stopped
+    command: valkey-server --requirepass ${VALKEY_PASSWORD} --appendonly yes --maxmemory 100mb --maxmemory-policy allkeys-lru
+    volumes:
+      - ./data/valkey:/data
+    networks:
+      - krt-internal
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================================
+  # Uptime Kuma - Monitoring Dashboard
+  # ============================================================
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: krt-uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - ./data/uptime-kuma:/app/data
+    networks:
+      - krt-internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ============================================================
+  # Watchtower - Auto-update containers from GHCR
+  # ============================================================
+  watchtower:
+    image: containrrr/watchtower
+    container_name: krt-watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_LABEL_ENABLE=true
+      - REPO_USER=${WATCHTOWER_REPO_USER}
+      - REPO_PASS=${WATCHTOWER_REPO_PASS}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - krt-internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    security_opt:
+      - no-new-privileges:true
+
+# ============================================================
+# Networks
+# ============================================================
+networks:
+  krt-public:
+    driver: bridge
+  krt-internal:
+    driver: bridge
+    internal: true
+
+# ============================================================
+# Volumes
+# ============================================================
+volumes:
+  frontend-build:
+    driver: local
