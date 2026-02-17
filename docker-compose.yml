@@ -12,10 +12,8 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./nginx/webroot:/var/www/certbot:ro
       - frontend-build:/usr/share/nginx/html:ro
     depends_on:
@@ -91,9 +89,9 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     volumes:
-      - frontend-build:/app/dist
-    # Runs once to copy build output into the shared volume, then exits
-    entrypoint: ["/bin/sh", "-c", "cp -r /app/dist/* /app/dist/ 2>/dev/null; echo 'Frontend build copied'; sleep infinity"]
+      - frontend-build:/output
+    # Copy built files from /usr/share/nginx/html (baked into image) into the shared volume
+    entrypoint: ["/bin/sh", "-c", "cp -r /usr/share/nginx/html/* /output/ && echo 'Frontend build copied to volume' && sleep infinity"]
     restart: unless-stopped
     networks:
       - krt-internal
