@@ -369,6 +369,8 @@ function CreateUnitForm({ teamId, groups, onClose }) {
   const [role, setRole] = useState('');
   const [crewCount, setCrewCount] = useState(1);
   const [crewMax, setCrewMax] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   const UNIT_TYPES = [
     { value: 'ship', label: '🚀 Ship' },
@@ -381,26 +383,41 @@ function CreateUnitForm({ teamId, groups, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
+    setSubmitting(true);
+    setError(null);
 
-    const res = await fetch('/api/units', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        name: name.trim(),
-        callsign: callsign || null,
-        ship_type: shipType || null,
-        unit_type: unitType,
-        team_id: teamId,
-        group_id: groupId || null,
-        role: role || null,
-        crew_count: crewCount,
-        crew_max: crewMax ? parseInt(crewMax) : null,
-      }),
-    });
+    try {
+      const res = await fetch('/api/units', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: name.trim(),
+          callsign: callsign || null,
+          ship_type: shipType || null,
+          unit_type: unitType,
+          team_id: teamId,
+          group_id: groupId || null,
+          role: role || null,
+          crew_count: crewCount,
+          crew_max: crewMax ? parseInt(crewMax) : null,
+        }),
+      });
 
-    if (res.ok) {
-      onClose();
+      if (res.ok) {
+        toast.success('Unit created');
+        onClose();
+      } else {
+        const data = await res.json().catch(() => null);
+        const msg = data?.details?.map(d => d.message).join(', ') || data?.error || `Error ${res.status}`;
+        setError(msg);
+        toast.error(`Failed: ${msg}`);
+      }
+    } catch (err) {
+      setError('Network error — are you online?');
+      toast.error('Network error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -478,9 +495,10 @@ function CreateUnitForm({ teamId, groups, onClose }) {
           />
         </div>
       </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
       <div className="flex gap-2">
-        <button type="submit" className="bg-krt-accent text-white text-sm px-3 py-1 rounded">
-          Create
+        <button type="submit" disabled={submitting} className="bg-krt-accent text-white text-sm px-3 py-1 rounded disabled:opacity-50">
+          {submitting ? 'Creating…' : 'Create'}
         </button>
         <button type="button" onClick={onClose} className="text-gray-400 text-sm px-3 py-1">
           Cancel
@@ -494,26 +512,43 @@ function CreateUnitForm({ teamId, groups, onClose }) {
 function CreateGroupForm({ teamId, onClose }) {
   const [name, setName] = useState('');
   const [mission, setMission] = useState('CUSTOM');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
+    setSubmitting(true);
+    setError(null);
 
-    const mType = MISSION_TYPES.find((m) => m.value === mission);
-    const res = await fetch('/api/groups', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        name: name.trim(),
-        team_id: teamId,
-        mission,
-        color: mType?.color || '#3b82f6',
-      }),
-    });
+    try {
+      const mType = MISSION_TYPES.find((m) => m.value === mission);
+      const res = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: name.trim(),
+          team_id: teamId,
+          mission,
+          color: mType?.color || '#3b82f6',
+        }),
+      });
 
-    if (res.ok) {
-      onClose();
+      if (res.ok) {
+        toast.success('Group created');
+        onClose();
+      } else {
+        const data = await res.json().catch(() => null);
+        const msg = data?.details?.map(d => d.message).join(', ') || data?.error || `Error ${res.status}`;
+        setError(msg);
+        toast.error(`Failed: ${msg}`);
+      }
+    } catch (err) {
+      setError('Network error — are you online?');
+      toast.error('Network error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -536,9 +571,10 @@ function CreateGroupForm({ teamId, onClose }) {
           <option key={m.value} value={m.value}>{m.label}</option>
         ))}
       </select>
+      {error && <p className="text-xs text-red-400">{error}</p>}
       <div className="flex gap-2">
-        <button type="submit" className="bg-krt-accent text-white text-sm px-3 py-1 rounded">
-          Create
+        <button type="submit" disabled={submitting} className="bg-krt-accent text-white text-sm px-3 py-1 rounded disabled:opacity-50">
+          {submitting ? 'Creating…' : 'Create'}
         </button>
         <button type="button" onClick={onClose} className="text-gray-400 text-sm px-3 py-1">
           Cancel

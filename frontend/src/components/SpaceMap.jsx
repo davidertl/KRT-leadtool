@@ -145,7 +145,7 @@ function SceneContents() {
         enableDamping
         dampingFactor={0.1}
         minDistance={10}
-        maxDistance={10000}
+        maxDistance={100000}
         enablePan
         panSpeed={2}
         rotateSpeed={0.5}
@@ -166,7 +166,7 @@ function SceneContents() {
 export default function SpaceMap() {
   return (
     <Canvas
-      camera={{ position: [0, 500, 500], fov: 60, near: 0.1, far: 100000 }}
+      camera={{ position: [0, 5000, 15000], fov: 60, near: 0.1, far: 500000 }}
       style={{ background: '#0a0e1a' }}
     >
       <SceneContents />
