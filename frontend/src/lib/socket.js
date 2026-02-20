@@ -110,6 +110,21 @@ export function connectSocket(teamId) {
 
   socket.on('team:online', (users) => useMissionStore.getState().setOnlineUsers(users));
 
+  // Member / join request events
+  socket.on('member:join_request', (jr) => {
+    useMissionStore.getState().addJoinRequest(jr);
+    toast(`${jr.username || 'Someone'} wants to join the mission`, { icon: '👋' });
+  });
+  socket.on('member:accepted', () => {
+    // Could refresh members but for now the accepting client already updated the store
+  });
+  socket.on('member:declined', ({ requestId }) => {
+    useMissionStore.getState().removeJoinRequest(requestId);
+  });
+  socket.on('member:removed', ({ user_id }) => {
+    useMissionStore.getState().removeMember(user_id);
+  });
+
   return socket;
 }
 

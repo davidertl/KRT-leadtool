@@ -26,7 +26,13 @@ async function safeFetch(url, opts, fallback = []) {
 export default function MapPage() {
   const { teamId } = useParams();
   const navigate = useNavigate();
-  const { setTeamId, setUnits, setGroups, setWaypoints, setContacts, setTasks, setOperations, setEvents, setMessages, setBookmarks, setNavData, setActiveSystemId, setLastSyncTime, loadFromCache } = useMissionStore();
+  const {
+    setTeamId, setUnits, setGroups, setWaypoints, setContacts, setTasks,
+    setOperations, setEvents, setMessages, setBookmarks, setNavData,
+    setActiveSystemId, setLastSyncTime, loadFromCache,
+    setMembers, setJoinRequests, setMyMissionRole, setMyAssignedGroups,
+    addJoinRequest, removeJoinRequest,
+  } = useMissionStore();
 
   useEffect(() => {
     setTeamId(teamId);
@@ -48,8 +54,11 @@ export default function MapPage() {
       safeFetch(`/api/bookmarks?team_id=${teamId}`, creds),
       safeFetch(`/api/navigation/systems`, creds),
       safeFetch(`/api/waypoints?team_id=${teamId}`, creds),
+      safeFetch(`/api/members/${teamId}/members`, creds),
+      safeFetch(`/api/members/${teamId}/requests`, creds),
+      safeFetch(`/api/teams/${teamId}`, creds, null),
     ])
-      .then(([units, groups, contacts, tasks, operations, events, messages, bookmarks, systems, waypoints]) => {
+      .then(([units, groups, contacts, tasks, operations, events, messages, bookmarks, systems, waypoints, members, joinRequests, teamInfo]) => {
         setUnits(Array.isArray(units) ? units : []);
         setGroups(Array.isArray(groups) ? groups : []);
         setContacts(Array.isArray(contacts) ? contacts : []);
@@ -59,6 +68,14 @@ export default function MapPage() {
         setMessages(Array.isArray(messages) ? messages : []);
         setBookmarks(Array.isArray(bookmarks) ? bookmarks : []);
         setWaypoints(Array.isArray(waypoints) ? waypoints : []);
+        setMembers(Array.isArray(members) ? members : []);
+        setJoinRequests(Array.isArray(joinRequests) ? joinRequests : []);
+
+        // Set current user's mission role from the team info
+        if (teamInfo && teamInfo.mission_role) {
+          setMyMissionRole(teamInfo.mission_role);
+          setMyAssignedGroups(teamInfo.assigned_group_ids || []);
+        }
 
         // Load first system navigation data
         if (Array.isArray(systems) && systems.length > 0) {

@@ -9,6 +9,7 @@ import OperationPanel from './OperationPanel';
 import EventLog from './EventLog';
 import QuickMessages from './QuickMessages';
 import BookmarkPanel from './BookmarkPanel';
+import MultiplayerPanel from './MultiplayerPanel';
 import toast from 'react-hot-toast';
 
 const MISSION_TYPES = [
@@ -25,13 +26,22 @@ const STATUS_OPTIONS = ['idle', 'en_route', 'on_station', 'engaged', 'rtb', 'dis
 
 export default function Sidebar({ onBack }) {
   const { user } = useAuthStore();
-  const { teamId, units, groups, contacts, tasks, operations, events, messages, bookmarks, selectedUnitIds, clearSelection, searchQuery, statusFilter } = useMissionStore();
+  const { teamId, units, groups, contacts, tasks, operations, events, messages, bookmarks, joinRequests, selectedUnitIds, clearSelection, searchQuery, statusFilter, myMissionRole, canEdit } = useMissionStore();
   const [tab, setTab] = useState('units');
   const [showCreateUnit, setShowCreateUnit] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showSpotrep, setShowSpotrep] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [detailUnitId, setDetailUnitId] = useState(null);
+
+  // Permission helpers
+  const isGesamtlead = myMissionRole === 'gesamtlead';
+  const isGruppenlead = myMissionRole === 'gruppenlead';
+  const isTeamlead = myMissionRole === 'teamlead';
+  const canCreateUnits = isGesamtlead || isGruppenlead;
+  const canCreateGroups = isGesamtlead;
+  const canCreateContacts = isGesamtlead || isGruppenlead;
+  const canCreateTasks = isGesamtlead || isGruppenlead;
 
   const selectedUnits = units.filter((u) => selectedUnitIds.includes(u.id));
 
@@ -62,7 +72,18 @@ export default function Sidebar({ onBack }) {
           ← Back
         </button>
         <h2 className="font-bold text-lg flex-1 truncate">Mission</h2>
-        <span className="text-xs text-gray-500">{user?.username}</span>
+        <div className="text-right">
+          <span className="text-xs text-gray-500 block">{user?.username}</span>
+          {myMissionRole && (
+            <span className={`text-[10px] font-bold ${
+              myMissionRole === 'gesamtlead' ? 'text-red-400' :
+              myMissionRole === 'gruppenlead' ? 'text-yellow-400' : 'text-blue-400'
+            }`}>
+              {myMissionRole === 'gesamtlead' ? 'Gesamtlead' :
+               myMissionRole === 'gruppenlead' ? 'Gruppenlead' : 'Teamlead'}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Tabs — two rows */}
@@ -87,7 +108,7 @@ export default function Sidebar({ onBack }) {
           ))}
         </div>
         <div className="flex overflow-x-auto">
-          {['ops', 'comms', 'log', 'bookmarks'].map((t) => (
+          {['ops', 'comms', 'log', 'bookmarks', 'multiplayer'].map((t) => (
             <button
               key={t}
               onClick={() => { setTab(t); setDetailUnitId(null); }}
@@ -101,6 +122,7 @@ export default function Sidebar({ onBack }) {
               {t === 'comms' && `📡 Comms`}
               {t === 'log' && `📜 Log (${events.length})`}
               {t === 'bookmarks' && `📌 Marks (${bookmarks.length})`}
+              {t === 'multiplayer' && `👥 MP${joinRequests.length > 0 ? ` (${joinRequests.length})` : ''}`}
             </button>
           ))}
         </div>
@@ -119,12 +141,14 @@ export default function Sidebar({ onBack }) {
         {/* Units tab */}
         {!detailUnitId && tab === 'units' && (
           <div className="space-y-2">
-            <button
-              onClick={() => setShowCreateUnit(!showCreateUnit)}
-              className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
-            >
-              + Add Unit
-            </button>
+            {canCreateUnits && (
+              <button
+                onClick={() => setShowCreateUnit(!showCreateUnit)}
+                className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
+              >
+                + Add Unit
+              </button>
+            )}
 
             {showCreateUnit && (
               <CreateUnitForm
@@ -152,12 +176,14 @@ export default function Sidebar({ onBack }) {
         {/* Groups tab */}
         {tab === 'groups' && (
           <div className="space-y-2">
-            <button
-              onClick={() => setShowCreateGroup(!showCreateGroup)}
-              className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
-            >
-              + Add Group
-            </button>
+            {canCreateGroups && (
+              <button
+                onClick={() => setShowCreateGroup(!showCreateGroup)}
+                className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
+              >
+                + Add Group
+              </button>
+            )}
 
             {showCreateGroup && (
               <CreateGroupForm teamId={teamId} onClose={() => setShowCreateGroup(false)} />
@@ -175,12 +201,14 @@ export default function Sidebar({ onBack }) {
         {/* Contacts / IFF tab */}
         {!detailUnitId && tab === 'contacts' && (
           <div className="space-y-2">
-            <button
-              onClick={() => setShowSpotrep(!showSpotrep)}
-              className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
+            {canCreateContacts && (
+              <button
+                onClick={() => setShowSpotrep(!showSpotrep)}
+                className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
             >
               + File SPOTREP
             </button>
+            )}
 
             {showSpotrep && (
               <SpotrepForm teamId={teamId} onClose={() => setShowSpotrep(false)} />
@@ -210,12 +238,14 @@ export default function Sidebar({ onBack }) {
         {/* Tasks tab */}
         {!detailUnitId && tab === 'tasks' && (
           <div className="space-y-2">
-            <button
-              onClick={() => setShowTaskForm(!showTaskForm)}
-              className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
-            >
-              + Create Task
-            </button>
+            {canCreateTasks && (
+              <button
+                onClick={() => setShowTaskForm(!showTaskForm)}
+                className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
+              >
+                + Create Task
+              </button>
+            )}
 
             {showTaskForm && (
               <TaskForm teamId={teamId} onClose={() => setShowTaskForm(false)} />
@@ -284,6 +314,9 @@ export default function Sidebar({ onBack }) {
 
         {/* Bookmarks tab */}
         {tab === 'bookmarks' && <BookmarkPanel teamId={teamId} />}
+
+        {/* Multiplayer tab */}
+        {tab === 'multiplayer' && <MultiplayerPanel teamId={teamId} />}
       </div>
     </div>
   );
@@ -369,18 +402,22 @@ const MAP_SCALE = 1e6; // must match NavPointMarker
 const SPAWNABLE_NAV_TYPES = ['station', 'rest_stop', 'outpost'];
 
 function CreateUnitForm({ teamId, groups, onClose }) {
-  const { navData } = useMissionStore();
+  const { navData, units } = useMissionStore();
   const [name, setName] = useState('');
   const [callsign, setCallsign] = useState('');
   const [shipType, setShipType] = useState('');
   const [unitType, setUnitType] = useState('ship');
   const [groupId, setGroupId] = useState('');
   const [stationId, setStationId] = useState('');
+  const [parentUnitId, setParentUnitId] = useState('');
   const [role, setRole] = useState('');
   const [crewCount, setCrewCount] = useState(1);
   const [crewMax, setCrewMax] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+
+  // Available ships/vehicles for person assignment
+  const availableShips = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.team_id === teamId);
 
   // Spawnable locations sorted alphabetically
   const spawnLocations = (navData?.points || [])
@@ -390,26 +427,35 @@ function CreateUnitForm({ teamId, groups, onClose }) {
   const UNIT_TYPES = [
     { value: 'ship', label: '🚀 Ship' },
     { value: 'ground_vehicle', label: '🚗 Ground Vehicle' },
-    { value: 'squad', label: '👥 Squad' },
     { value: 'person', label: '🧑 Person' },
-    { value: 'marker', label: '📌 Marker' },
   ];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
-    if (!stationId) {
-      setError('Please select a starting location');
-      return;
+
+    // For persons aboard a ship, use the ship's position; otherwise require a station
+    let spawnX = 0, spawnY = 0, spawnZ = 0;
+    if (unitType === 'person' && parentUnitId) {
+      const parentShip = units.find((u) => u.id === parentUnitId);
+      if (parentShip) {
+        spawnX = parentShip.pos_x || 0;
+        spawnY = parentShip.pos_y || 0;
+        spawnZ = parentShip.pos_z || 0;
+      }
+    } else {
+      if (!stationId) {
+        setError('Please select a starting location');
+        return;
+      }
+      const station = spawnLocations.find((p) => p.id === stationId);
+      spawnX = station ? (station.pos_x || 0) / MAP_SCALE : 0;
+      spawnY = station ? (station.pos_y || 0) / MAP_SCALE : 0;
+      spawnZ = station ? (station.pos_z || 0) / MAP_SCALE : 0;
     }
+
     setSubmitting(true);
     setError(null);
-
-    // Look up selected station and convert to map-space coordinates
-    const station = spawnLocations.find((p) => p.id === stationId);
-    const spawnX = station ? (station.pos_x || 0) / MAP_SCALE : 0;
-    const spawnY = station ? (station.pos_y || 0) / MAP_SCALE : 0;
-    const spawnZ = station ? (station.pos_z || 0) / MAP_SCALE : 0;
 
     try {
       const res = await fetch('/api/units', {
@@ -423,6 +469,7 @@ function CreateUnitForm({ teamId, groups, onClose }) {
           unit_type: unitType,
           team_id: teamId,
           group_id: groupId || null,
+          parent_unit_id: parentUnitId || null,
           role: role || null,
           crew_count: crewCount,
           crew_max: crewMax ? parseInt(crewMax) : null,
@@ -464,7 +511,7 @@ function CreateUnitForm({ teamId, groups, onClose }) {
           type="text"
           value={callsign}
           onChange={(e) => setCallsign(e.target.value)}
-          placeholder="Callsign (e.g. Alpha-1)"
+          placeholder="VHF-Freq (e.g. 148.500)"
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
         />
       </div>
@@ -496,15 +543,31 @@ function CreateUnitForm({ teamId, groups, onClose }) {
       <select
         value={stationId}
         onChange={(e) => setStationId(e.target.value)}
-        className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+        className={`w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent ${unitType === 'person' && parentUnitId ? 'opacity-50' : ''}`}
+        disabled={unitType === 'person' && !!parentUnitId}
       >
-        <option value="">Starting location *</option>
+        <option value="">{unitType === 'person' && parentUnitId ? 'Position inherited from ship' : 'Starting location *'}</option>
         {spawnLocations.map((loc) => (
           <option key={loc.id} value={loc.id}>
             {loc.name} ({loc.nav_type.replace('_', ' ')})
           </option>
         ))}
       </select>
+      {/* Parent ship selector for persons */}
+      {unitType === 'person' && (
+        <select
+          value={parentUnitId}
+          onChange={(e) => { setParentUnitId(e.target.value); if (e.target.value) setStationId(''); }}
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+        >
+          <option value="">Aboard ship (optional)</option>
+          {availableShips.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.callsign ? `[${s.callsign}] ` : ''}{s.name} ({s.ship_type || s.unit_type})
+            </option>
+          ))}
+        </select>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <select
           value={groupId}

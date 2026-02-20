@@ -37,7 +37,11 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragStartPos = useRef(null);
-  const { toggleSelectUnit, updateUnit } = useMissionStore();
+  const dragAxis = useRef(null);          // 'x' | 'z' | null — locked after first significant move
+  const dragWorldStart = useRef(null);    // world-space pointer position at drag start
+  const AXIS_LOCK_THRESHOLD = 2;          // world units before axis is locked
+  const { toggleSelectUnit, updateUnit, canEdit } = useMissionStore();
+  const canDrag = canEdit(unit.group_id);
 
   const color = group?.color || STATUS_COLORS[unit.status] || '#6b7280';
   const markerSize = isSelected ? 12 : 8;
@@ -54,13 +58,16 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
 
   const handlePointerDown = useCallback((e) => {
     e.stopPropagation();
+    if (!canDrag) return; // Teamlead cannot drag
     // Set the drag plane at the unit's Y level
     dragPlane.set(new THREE.Vector3(0, 1, 0), -unit.pos_y);
     dragStartPos.current = { x: unit.pos_x, z: unit.pos_z, pointerId: e.pointerId };
+    dragAxis.current = null;
+    dragWorldStart.current = null;
     setDragging(true);
     e.target.setPointerCapture(e.pointerId);
     onDragStart?.();
-  }, [unit.pos_x, unit.pos_y, unit.pos_z, onDragStart]);
+  }, [unit.pos_x, unit.pos_y, unit.pos_z, onDragStart, canDrag]);
 
   const handlePointerMove = useCallback((e) => {
     if (!dragging) return;
@@ -68,8 +75,28 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
     // Raycast against the drag plane
     const ray = e.ray;
     if (ray && ray.intersectPlane(dragPlane, intersection)) {
-      const newX = intersection.x;
-      const newZ = intersection.z;
+      // Record the first world-space intersection to determine axis
+      if (!dragWorldStart.current) {
+        dragWorldStart.current = { x: intersection.x, z: intersection.z };
+      }
+
+      // Determine locked axis once movement exceeds threshold
+      if (!dragAxis.current) {
+        const adx = Math.abs(intersection.x - dragWorldStart.current.x);
+        const adz = Math.abs(intersection.z - dragWorldStart.current.z);
+        if (adx > AXIS_LOCK_THRESHOLD || adz > AXIS_LOCK_THRESHOLD) {
+          dragAxis.current = adx >= adz ? 'x' : 'z';
+        } else {
+          return; // not enough movement yet — don't move the unit
+        }
+      }
+
+      // Apply movement only on the locked axis
+      const startX = dragStartPos.current?.x ?? unit.pos_x;
+      const startZ = dragStartPos.current?.z ?? unit.pos_z;
+      const newX = dragAxis.current === 'x' ? intersection.x : startX;
+      const newZ = dragAxis.current === 'z' ? intersection.z : startZ;
+
       // Update local position immediately for smooth dragging
       if (groupRef.current) {
         groupRef.current.position.x = newX;
@@ -84,7 +111,7 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
         pos_z: newZ,
       });
     }
-  }, [dragging, unit.id, unit.team_id, unit.pos_y]);
+  }, [dragging, unit.id, unit.team_id, unit.pos_x, unit.pos_z, unit.pos_y]);
 
   const handlePointerUp = useCallback(async (e) => {
     if (!dragging) return;

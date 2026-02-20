@@ -95,10 +95,15 @@ CREATE TYPE task_type AS ENUM (
 CREATE TYPE unit_type AS ENUM (
     'ship',
     'ground_vehicle',
-    'squad',
     'person',
-    'npc_contact',
-    'marker'
+    'npc_contact'
+);
+
+-- Mission role (in-mission permission level)
+CREATE TYPE mission_role AS ENUM (
+    'gesamtlead',   -- Full access to everything
+    'gruppenlead',  -- Can edit assigned groups and their teamleads
+    'teamlead'      -- Read-only + comms only
 );
 
 -- Contact confidence
@@ -174,12 +179,14 @@ CREATE TABLE teams (
     name            VARCHAR(256) NOT NULL,
     description     TEXT,
     owner_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    join_code       VARCHAR(8) UNIQUE,                -- shareable code for join requests
     settings        JSONB DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_teams_owner ON teams(owner_id);
+CREATE INDEX idx_teams_join_code ON teams(join_code);
 
 -- ============================================================
 -- Groups / Fleets (within a team/mission)
@@ -215,6 +222,9 @@ CREATE TABLE units (
     role            VARCHAR(128),                     -- e.g. "Fighter escort", "Medical"
     crew_count      INTEGER DEFAULT 1,
     crew_max        INTEGER,
+
+    -- Parent unit (person aboard a ship)
+    parent_unit_id  UUID REFERENCES units(id) ON DELETE SET NULL,
 
     -- Position in 3D game space
     pos_x           DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -285,14 +295,34 @@ CREATE INDEX idx_status_history_user ON status_history(changed_by);
 -- Team memberships (many-to-many: users ↔ teams)
 -- ============================================================
 CREATE TABLE team_members (
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role            user_role NOT NULL DEFAULT 'member',
-    joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    team_id             UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role                user_role NOT NULL DEFAULT 'member',
+    mission_role        mission_role DEFAULT 'teamlead',
+    assigned_group_ids  UUID[] DEFAULT '{}',          -- groups this member can manage
+    joined_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (team_id, user_id)
 );
 
 CREATE INDEX idx_team_members_user ON team_members(user_id);
+
+-- ============================================================
+-- Join Requests (pending requests to join a team/mission)
+-- ============================================================
+CREATE TABLE join_requests (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',  -- 'pending', 'accepted', 'declined'
+    message         TEXT,                             -- optional message from requester
+    reviewed_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(team_id, user_id)
+);
+
+CREATE INDEX idx_join_requests_team ON join_requests(team_id, status);
+CREATE INDEX idx_join_requests_user ON join_requests(user_id);
 
 -- ============================================================
 -- Contacts / IFF tracking (enemy, neutral, unknown contacts)

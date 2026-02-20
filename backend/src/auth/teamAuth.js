@@ -18,7 +18,7 @@ function requireTeamMember(req, res, next) {
   }
 
   query(
-    'SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2',
+    'SELECT role, mission_role, assigned_group_ids FROM team_members WHERE team_id = $1 AND user_id = $2',
     [teamId, req.user.id]
   )
     .then((result) => {
@@ -26,6 +26,8 @@ function requireTeamMember(req, res, next) {
         return res.status(403).json({ error: 'You are not a member of this team' });
       }
       req.teamRole = result.rows[0].role;
+      req.missionRole = result.rows[0].mission_role || 'teamlead';
+      req.assignedGroups = result.rows[0].assigned_group_ids || [];
       next();
     })
     .catch(next);
@@ -42,4 +44,36 @@ function requireTeamLeader(req, res, next) {
   next();
 }
 
-module.exports = { requireTeamMember, requireTeamLeader };
+/**
+ * Middleware — require gesamtlead mission role.
+ * Must be used AFTER requireTeamMember.
+ */
+function requireGesamtlead(req, res, next) {
+  if (req.missionRole !== 'gesamtlead') {
+    return res.status(403).json({ error: 'Requires Gesamtlead role' });
+  }
+  next();
+}
+
+/**
+ * Middleware — require at least gruppenlead mission role.
+ * Gesamtlead always passes. For gruppenlead checks if the resource's group is in assigned groups.
+ * Must be used AFTER requireTeamMember.
+ */
+function requireGruppenlead(req, res, next) {
+  if (req.missionRole === 'gesamtlead') return next();
+  if (req.missionRole === 'gruppenlead') return next();
+  return res.status(403).json({ error: 'Requires Gruppenlead or higher role' });
+}
+
+/**
+ * Check if the user can edit a specific group.
+ * Gesamtlead can edit all, gruppenlead only their assigned groups.
+ */
+function canEditGroup(req, groupId) {
+  if (req.missionRole === 'gesamtlead') return true;
+  if (req.missionRole === 'gruppenlead' && req.assignedGroups.includes(groupId)) return true;
+  return false;
+}
+
+module.exports = { requireTeamMember, requireTeamLeader, requireGesamtlead, requireGruppenlead, canEditGroup };

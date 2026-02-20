@@ -55,17 +55,17 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 // Create unit
 router.post('/', requireAuth, validate(schemas.createUnit), requireTeamMember, async (req, res, next) => {
   try {
-    const { name, callsign, ship_type, unit_type, team_id, group_id, role, crew_count, crew_max,
+    const { name, callsign, ship_type, unit_type, team_id, group_id, parent_unit_id, role, crew_count, crew_max,
             pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes } = req.body;
     if (!name || !team_id) return res.status(400).json({ error: 'name and team_id are required' });
 
     const result = await query(
-      `INSERT INTO units (name, callsign, ship_type, unit_type, owner_id, team_id, group_id, role, crew_count, crew_max,
+      `INSERT INTO units (name, callsign, ship_type, unit_type, owner_id, team_id, group_id, parent_unit_id, role, crew_count, crew_max,
                           pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING *`,
       [name, callsign || null, ship_type || null, unit_type || 'ship', req.user.id, team_id, group_id || null,
-       role || null, crew_count || 1, crew_max || null,
+       parent_unit_id || null, role || null, crew_count || 1, crew_max || null,
        pos_x || 0, pos_y || 0, pos_z || 0, heading || 0,
        fuel ?? 100, ammo ?? 100, hull ?? 100,
        status || 'idle', roe || 'weapons_tight', notes || null]
@@ -79,7 +79,7 @@ router.post('/', requireAuth, validate(schemas.createUnit), requireTeamMember, a
 // Update unit (position, status, group, etc.)
 router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, next) => {
   try {
-    const { name, callsign, ship_type, unit_type, group_id, role, crew_count, crew_max,
+    const { name, callsign, ship_type, unit_type, group_id, parent_unit_id, role, crew_count, crew_max,
             pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes } = req.body;
 
     // Fetch old values for history
@@ -90,7 +90,7 @@ router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, n
     // Build dynamic SET clause — only update fields that were explicitly sent
     const fields = [];
     const values = [];
-    const bodyFields = { name, callsign, ship_type, unit_type, group_id, role, crew_count, crew_max,
+    const bodyFields = { name, callsign, ship_type, unit_type, group_id, parent_unit_id, role, crew_count, crew_max,
                          pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes };
     for (const [key, val] of Object.entries(bodyFields)) {
       if (val !== undefined) {

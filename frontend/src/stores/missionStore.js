@@ -18,6 +18,10 @@ export const useMissionStore = create((set, get) => ({
   bookmarks: [],
   navData: { systems: [], bodies: [], points: [], edges: [] },
   onlineUsers: [],
+  members: [],
+  joinRequests: [],
+  myMissionRole: null,          // 'gesamtlead' | 'gruppenlead' | 'teamlead'
+  myAssignedGroups: [],         // UUIDs of groups this user can manage
   selectedUnitIds: [],
   lastSyncTime: null,
   focusedUnitId: null,
@@ -169,6 +173,42 @@ export const useMissionStore = create((set, get) => ({
   removeBookmark: (id) => set((s) => ({
     bookmarks: s.bookmarks.filter((b) => b.id !== id),
   })),
+
+  // ---- Members & Join Requests ----
+  setMembers: (members) => set({ members }),
+  setJoinRequests: (joinRequests) => set({ joinRequests }),
+  setMyMissionRole: (role) => set({ myMissionRole: role }),
+  setMyAssignedGroups: (groups) => set({ myAssignedGroups: groups }),
+
+  addJoinRequest: (jr) => set((s) => ({
+    joinRequests: [...s.joinRequests.filter((r) => r.id !== jr.id), jr],
+  })),
+
+  removeJoinRequest: (id) => set((s) => ({
+    joinRequests: s.joinRequests.filter((r) => r.id !== id),
+  })),
+
+  updateMember: (updated) => set((s) => ({
+    members: s.members.map((m) => (m.user_id === updated.user_id ? { ...m, ...updated } : m)),
+  })),
+
+  removeMember: (userId) => set((s) => ({
+    members: s.members.filter((m) => m.user_id !== userId),
+  })),
+
+  /**
+   * Check if the current user can edit (based on mission role).
+   * Gesamtlead: always true. Gruppenlead: only for their assigned groups. Teamlead: false.
+   */
+  canEdit: (groupId) => {
+    const { myMissionRole, myAssignedGroups } = get();
+    if (myMissionRole === 'gesamtlead') return true;
+    if (myMissionRole === 'gruppenlead') {
+      if (!groupId) return false; // ungrouped units — gruppenlead can't edit
+      return myAssignedGroups.includes(groupId);
+    }
+    return false;
+  },
 
   // ---- Navigation Data ----
   setNavData: (navData) => set({ navData }),

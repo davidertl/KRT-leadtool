@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import toast from 'react-hot-toast';
 
 export default function DashboardPage() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const [teams, setTeams] = useState([]);
   const [newTeamName, setNewTeamName] = useState('');
+  const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,6 +39,31 @@ export default function DashboardPage() {
     }
   };
 
+  const handleJoinByCode = async (e) => {
+    e.preventDefault();
+    if (!joinCode.trim()) return;
+
+    try {
+      const res = await fetch('/api/members/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ join_code: joinCode.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || 'Join request sent!');
+        setJoinCode('');
+      } else if (res.status === 409) {
+        toast.error(data.error || 'Already a member');
+      } else {
+        toast.error(data.error || 'Failed to join');
+      }
+    } catch {
+      toast.error('Network error');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-krt-bg p-6">
       {/* Header */}
@@ -55,7 +82,7 @@ export default function DashboardPage() {
 
       <div className="max-w-4xl mx-auto">
         {/* Create team */}
-        <form onSubmit={createTeam} className="flex gap-3 mb-8">
+        <form onSubmit={createTeam} className="flex gap-3 mb-4">
           <input
             type="text"
             value={newTeamName}
@@ -68,6 +95,24 @@ export default function DashboardPage() {
             className="bg-krt-accent hover:bg-blue-600 text-white font-semibold px-6 py-2 rounded-lg transition-colors"
           >
             Create Mission
+          </button>
+        </form>
+
+        {/* Join by code */}
+        <form onSubmit={handleJoinByCode} className="flex gap-3 mb-8">
+          <input
+            type="text"
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            placeholder="Enter join code..."
+            maxLength={8}
+            className="flex-1 bg-krt-panel border border-krt-border rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent font-mono tracking-wider uppercase"
+          />
+          <button
+            type="submit"
+            className="bg-green-600 hover:bg-green-500 text-white font-semibold px-6 py-2 rounded-lg transition-colors"
+          >
+            Join Mission
           </button>
         </form>
 

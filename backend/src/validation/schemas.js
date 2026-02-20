@@ -13,7 +13,7 @@ const optionalCoordinate = z.number().finite().optional();
 // ---- Units ----
 
 const UNIT_STATUSES = ['idle', 'en_route', 'on_station', 'engaged', 'rtb', 'disabled'];
-const UNIT_TYPES = ['ship', 'ground_vehicle', 'squad', 'person', 'npc_contact', 'marker'];
+const UNIT_TYPES = ['ship', 'ground_vehicle', 'person', 'npc_contact'];
 const ROE_VALUES = ['weapons_free', 'weapons_tight', 'weapons_hold', 'defensive', 'aggressive', 'no_fire'];
 const percentage = z.number().int().min(0).max(100);
 
@@ -24,6 +24,7 @@ const createUnit = z.object({
   unit_type: z.enum(UNIT_TYPES).default('ship'),
   team_id: uuid,
   group_id: optionalUuid,
+  parent_unit_id: optionalUuid,
   role: z.string().max(128).optional().nullable(),
   crew_count: z.number().int().min(0).optional(),
   crew_max: z.number().int().min(0).optional().nullable(),
@@ -45,6 +46,7 @@ const updateUnit = z.object({
   ship_type: z.string().max(128).optional().nullable(),
   unit_type: z.enum(UNIT_TYPES).optional(),
   group_id: optionalUuid,
+  parent_unit_id: optionalUuid,
   role: z.string().max(128).optional().nullable(),
   crew_count: z.number().int().min(0).optional(),
   crew_max: z.number().int().min(0).optional().nullable(),

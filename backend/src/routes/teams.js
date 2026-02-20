@@ -3,16 +3,22 @@
  */
 
 const router = require('express').Router();
+const crypto = require('crypto');
 const { query } = require('../db/postgres');
 const { requireAuth, requireRole } = require('../auth/jwt');
 const { validate } = require('../validation/middleware');
 const { schemas } = require('../validation/schemas');
 
+/** Generate a short random join code */
+function generateJoinCode() {
+  return crypto.randomBytes(4).toString('hex').toUpperCase(); // 8-char hex
+}
+
 // List teams the user belongs to
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const result = await query(
-      `SELECT t.*, tm.role AS member_role
+      `SELECT t.*, tm.role AS member_role, tm.mission_role, tm.assigned_group_ids
        FROM teams t
        JOIN team_members tm ON tm.team_id = t.id
        WHERE tm.user_id = $1
@@ -27,7 +33,7 @@ router.get('/', requireAuth, async (req, res, next) => {
 router.get('/:id', requireAuth, async (req, res, next) => {
   try {
     const result = await query(
-      `SELECT t.*, tm.role AS member_role
+      `SELECT t.*, tm.role AS member_role, tm.mission_role, tm.assigned_group_ids
        FROM teams t
        JOIN team_members tm ON tm.team_id = t.id
        WHERE t.id = $1 AND tm.user_id = $2`,
@@ -44,16 +50,17 @@ router.post('/', requireAuth, validate(schemas.createTeam), async (req, res, nex
     const { name, description, settings } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
 
+    const joinCode = generateJoinCode();
     const result = await query(
-      `INSERT INTO teams (name, description, owner_id, settings)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO teams (name, description, owner_id, join_code, settings)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [name, description || null, req.user.id, settings || {}]
+      [name, description || null, req.user.id, joinCode, settings || {}]
     );
 
-    // Add creator as admin member
+    // Add creator as admin + gesamtlead
     await query(
-      `INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'admin')`,
+      `INSERT INTO team_members (team_id, user_id, role, mission_role) VALUES ($1, $2, 'admin', 'gesamtlead')`,
       [result.rows[0].id, req.user.id]
     );
 

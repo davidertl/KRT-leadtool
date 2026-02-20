@@ -15,10 +15,11 @@ Built for org leaders who need to keep track of what's going on during large-sca
 - **Waypoint paths** — Sequenced waypoints per unit, rendered as path lines on the map.
 
 ### Units & Groups
-- **Unit management** — Create ships/vehicles/squads/persons/markers with callsign, ship type, role, crew count, and status tracking (idle, en route, on station, engaged, RTB, disabled).
+- **Unit management** — Create ships/vehicles/persons with VHF-Freq, ship type, role, crew count, and status tracking (idle, en route, on station, engaged, RTB, disabled). Persons can be assigned aboard ships and transferred between them.
 - **Resource tracking** — Fuel, ammo, and hull percentage bars per unit with visual warnings at ≤25%. Bingo/Winchester indicators in unit lists.
 - **ROE presets** — Rules of engagement per unit: weapons free, weapons tight, weapons hold, defensive, aggressive, no fire.
 - **Groups** — Organize units into fleets by mission type (SAR, Fighter, Miner, Transport, Recon, Logistics, Custom).
+- **Axis-locked drag** — Map drag constrained to one axis at a time (X or Z) based on initial drag direction for precise positioning.
 
 ### Contact Tracking (IFF / SPOTREP)
 - **IFF classification** — Friend, hostile, neutral, unknown. Threat levels from none to critical.

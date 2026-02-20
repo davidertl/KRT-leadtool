@@ -54,6 +54,14 @@ export default function UnitDetailPanel({ unitId, onClose }) {
   const [editNotes, setEditNotes] = useState('');
   const { imageUrl, thumbnailUrl, loading: imgLoading, license } = useShipImage(unit?.ship_type);
 
+  // Permission check
+  const canEditUnit = useMissionStore.getState().canEdit(unit?.group_id);
+
+  // For person-to-ship transfers
+  const parentShip = unit?.parent_unit_id ? units.find((u) => u.id === unit.parent_unit_id) : null;
+  const ships = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.team_id === unit?.team_id);
+  const personsAboard = unit ? units.filter((u) => u.parent_unit_id === unit.id) : [];
+
   useEffect(() => {
     if (!unit) return;
     setEditName(unit.name);
@@ -143,6 +151,23 @@ export default function UnitDetailPanel({ unitId, onClose }) {
     }
   };
 
+  const handleTransferPerson = async (personId, newParentId) => {
+    try {
+      const res = await fetch(`/api/units/${personId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ parent_unit_id: newParentId || null }),
+      });
+      if (!res.ok) throw new Error('Failed to transfer');
+      const updated = await res.json();
+      storeUpdateUnit(updated);
+      toast.success(newParentId ? 'Person transferred' : 'Person disembarked');
+    } catch {
+      toast.error('Failed to transfer person');
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -200,11 +225,11 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         </div>
       )}
 
-      {/* Callsign, Role, Unit Type */}
+      {/* VHF-Freq, Role, Unit Type */}
       <div className="grid grid-cols-2 gap-2">
         {unit.callsign && (
           <div>
-            <label className="text-[10px] text-gray-600">Callsign</label>
+            <label className="text-[10px] text-gray-600">VHF-Freq</label>
             <div className="text-sm text-krt-accent font-mono font-bold">{unit.callsign}</div>
           </div>
         )}
@@ -258,12 +283,13 @@ export default function UnitDetailPanel({ unitId, onClose }) {
           {STATUS_OPTIONS.map((s) => (
             <button
               key={s}
-              onClick={() => handleStatusChange(s)}
+              onClick={() => canEditUnit && handleStatusChange(s)}
+              disabled={!canEditUnit}
               className={`text-xs px-2 py-1 rounded-full transition-colors ${
                 unit.status === s
                   ? `${STATUS_COLORS[s]} text-white`
                   : 'bg-krt-bg border border-krt-border text-gray-400 hover:text-white hover:border-krt-accent'
-              }`}
+              } ${!canEditUnit ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               {s}
             </button>
@@ -279,6 +305,46 @@ export default function UnitDetailPanel({ unitId, onClose }) {
             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: group.color }} />
             <span className="text-sm text-white">{group.name}</span>
             <span className="text-xs text-gray-500">{group.mission}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Aboard (for persons — show which ship they're on and allow transfer) */}
+      {unit.unit_type === 'person' && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Aboard</label>
+          <select
+            value={unit.parent_unit_id || ''}
+            onChange={(e) => handleTransferPerson(unit.id, e.target.value || null)}
+            className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+          >
+            <option value="">— Not aboard any ship —</option>
+            {ships.map((s) => (
+              <option key={s.id} value={s.id}>{s.callsign ? `[${s.callsign}] ` : ''}{s.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Persons aboard (for ships/vehicles — list persons assigned to this unit) */}
+      {(unit.unit_type === 'ship' || unit.unit_type === 'ground_vehicle') && personsAboard.length > 0 && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">
+            Persons Aboard ({personsAboard.length})
+          </label>
+          <div className="space-y-1 max-h-32 overflow-y-auto">
+            {personsAboard.map((p) => (
+              <div key={p.id} className="flex items-center justify-between bg-krt-bg rounded px-2 py-1.5">
+                <span className="text-sm text-white truncate">{p.name}</span>
+                <button
+                  onClick={() => handleTransferPerson(p.id, null)}
+                  className="text-xs text-red-400 hover:text-red-300 ml-2 whitespace-nowrap"
+                  title="Remove from ship"
+                >
+                  ✕ Disembark
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -372,27 +438,29 @@ export default function UnitDetailPanel({ unitId, onClose }) {
       )}
 
       {/* Actions */}
-      <div className="flex gap-2 pt-2 border-t border-krt-border">
-        {editing ? (
-          <>
-            <button onClick={handleSaveEdit} className="bg-krt-accent text-white text-xs px-3 py-1 rounded">
-              Save
-            </button>
-            <button onClick={() => setEditing(false)} className="text-gray-400 text-xs px-3 py-1">
-              Cancel
-            </button>
-          </>
-        ) : (
-          <>
-            <button onClick={() => setEditing(true)} className="text-krt-accent text-xs px-3 py-1 hover:text-blue-400">
-              Edit
-            </button>
-            <button onClick={handleDelete} className="text-red-400 text-xs px-3 py-1 hover:text-red-300 ml-auto">
-              Delete
-            </button>
-          </>
-        )}
-      </div>
+      {canEditUnit && (
+        <div className="flex gap-2 pt-2 border-t border-krt-border">
+          {editing ? (
+            <>
+              <button onClick={handleSaveEdit} className="bg-krt-accent text-white text-xs px-3 py-1 rounded">
+                Save
+              </button>
+              <button onClick={() => setEditing(false)} className="text-gray-400 text-xs px-3 py-1">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setEditing(true)} className="text-krt-accent text-xs px-3 py-1 hover:text-blue-400">
+                Edit
+              </button>
+              <button onClick={handleDelete} className="text-red-400 text-xs px-3 py-1 hover:text-red-300 ml-auto">
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

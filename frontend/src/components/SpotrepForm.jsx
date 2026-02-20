@@ -237,7 +237,7 @@ export default function SpotrepForm({ teamId, onClose }) {
       {/* Identification */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Callsign / Name</label>
+          <label className="text-xs text-gray-500 block mb-1">VHF-Freq / Name</label>
           <input
             type="text"
             value={name}

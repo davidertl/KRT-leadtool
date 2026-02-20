@@ -29,6 +29,7 @@ const operationsRoutes = require('./routes/operations');
 const eventsRoutes = require('./routes/events');
 const messagesRoutes = require('./routes/messages');
 const bookmarksRoutes = require('./routes/bookmarks');
+const membersRoutes = require('./routes/members');
 
 // Passport config
 require('./auth/discord');
@@ -80,6 +81,7 @@ app.use('/api/operations', operationsRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/bookmarks', bookmarksRoutes);
+app.use('/api/members', membersRoutes);
 
 // ---- Error handler ----
 app.use((err, req, res, _next) => {
