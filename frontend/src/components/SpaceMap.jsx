@@ -10,33 +10,42 @@ import { CelestialBodyMarker, NavPointMarker } from './NavPointMarker';
 import * as THREE from 'three';
 
 /**
- * Camera controller that handles focus-on-unit animation
+ * Camera controller that handles focus-on-unit and focus-on-position animation
  */
 function CameraFocus({ controlsRef }) {
   const { camera } = useThree();
-  const { focusedUnitId, units, clearFocus } = useMissionStore();
+  const { focusedUnitId, focusedPosition, units, clearFocus } = useMissionStore();
   const targetPos = useRef(null);
   const animating = useRef(false);
 
   useEffect(() => {
-    if (!focusedUnitId) return;
-    const unit = units.find((u) => u.id === focusedUnitId);
-    if (!unit) return;
-
-    // Set target for camera to animate toward
-    targetPos.current = new THREE.Vector3(unit.pos_x, unit.pos_y + 200, unit.pos_z + 200);
-    if (controlsRef.current) {
-      controlsRef.current.target.set(unit.pos_x, unit.pos_y, unit.pos_z);
+    // Focus on a unit
+    if (focusedUnitId) {
+      const unit = units.find((u) => u.id === focusedUnitId);
+      if (!unit) return;
+      targetPos.current = new THREE.Vector3(unit.pos_x, unit.pos_y + 200, unit.pos_z + 200);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(unit.pos_x, unit.pos_y, unit.pos_z);
+      }
+      animating.current = true;
     }
-    animating.current = true;
+    // Focus on an arbitrary position
+    else if (focusedPosition) {
+      const { x, y, z } = focusedPosition;
+      targetPos.current = new THREE.Vector3(x, y + 200, z + 200);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(x, y, z);
+      }
+      animating.current = true;
+    }
+    else return;
 
-    // Clear focus after a brief period
     const timeout = setTimeout(() => {
       clearFocus();
       animating.current = false;
     }, 1500);
     return () => clearTimeout(timeout);
-  }, [focusedUnitId]);
+  }, [focusedUnitId, focusedPosition]);
 
   useFrame(() => {
     if (!animating.current || !targetPos.current) return;

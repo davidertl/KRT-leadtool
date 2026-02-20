@@ -21,6 +21,7 @@ export const useMissionStore = create((set, get) => ({
   selectedUnitIds: [],
   lastSyncTime: null,
   focusedUnitId: null,
+  focusedPosition: null,
   searchQuery: '',
   statusFilter: null,
   activeSystemId: null,
@@ -28,8 +29,9 @@ export const useMissionStore = create((set, get) => ({
   setTeamId: (teamId) => set({ teamId }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setStatusFilter: (s) => set({ statusFilter: s }),
-  focusUnit: (id) => set({ focusedUnitId: id }),
-  clearFocus: () => set({ focusedUnitId: null }),
+  focusUnit: (id) => set({ focusedUnitId: id, focusedPosition: null }),
+  focusPosition: (pos) => set({ focusedPosition: pos, focusedUnitId: null }),
+  clearFocus: () => set({ focusedUnitId: null, focusedPosition: null }),
   setActiveSystemId: (id) => set({ activeSystemId: id }),
 
   // ---- Units ----
@@ -161,7 +163,7 @@ export const useMissionStore = create((set, get) => ({
   setBookmarks: (bookmarks) => set({ bookmarks }),
 
   addBookmark: (bm) => set((s) => ({
-    bookmarks: [...s.bookmarks, bm],
+    bookmarks: [...s.bookmarks.filter((b) => b.id !== bm.id), bm],
   })),
 
   removeBookmark: (id) => set((s) => ({

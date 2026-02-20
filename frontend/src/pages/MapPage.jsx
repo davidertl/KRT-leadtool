@@ -6,11 +6,27 @@ import SpaceMap from '../components/SpaceMap';
 import Sidebar from '../components/Sidebar';
 import OnlineUsers from '../components/OnlineUsers';
 import ConnectionStatus from '../components/ConnectionStatus';
+import toast from 'react-hot-toast';
+
+/** Safe fetch wrapper — returns fallback on non-ok or network error */
+async function safeFetch(url, opts, fallback = []) {
+  try {
+    const res = await fetch(url, opts);
+    if (!res.ok) {
+      console.warn(`[KRT] ${url} responded ${res.status}`);
+      return fallback;
+    }
+    return await res.json();
+  } catch (err) {
+    console.warn(`[KRT] ${url} failed:`, err.message);
+    return fallback;
+  }
+}
 
 export default function MapPage() {
   const { teamId } = useParams();
   const navigate = useNavigate();
-  const { setTeamId, setUnits, setGroups, setContacts, setTasks, setOperations, setEvents, setMessages, setBookmarks, setNavData, setActiveSystemId, setLastSyncTime, loadFromCache } = useMissionStore();
+  const { setTeamId, setUnits, setGroups, setWaypoints, setContacts, setTasks, setOperations, setEvents, setMessages, setBookmarks, setNavData, setActiveSystemId, setLastSyncTime, loadFromCache } = useMissionStore();
 
   useEffect(() => {
     setTeamId(teamId);
@@ -18,19 +34,22 @@ export default function MapPage() {
     // Load cached data first (offline support)
     loadFromCache(teamId);
 
+    const creds = { credentials: 'include' };
+
     // Fetch fresh data from server
     Promise.all([
-      fetch(`/api/units?team_id=${teamId}`, { credentials: 'include' }).then((r) => r.json()),
-      fetch(`/api/groups?team_id=${teamId}`, { credentials: 'include' }).then((r) => r.json()),
-      fetch(`/api/contacts?team_id=${teamId}&active_only=true`, { credentials: 'include' }).then((r) => r.json()),
-      fetch(`/api/tasks?team_id=${teamId}`, { credentials: 'include' }).then((r) => r.json()),
-      fetch(`/api/operations?team_id=${teamId}`, { credentials: 'include' }).then((r) => r.json()),
-      fetch(`/api/events?team_id=${teamId}&limit=100`, { credentials: 'include' }).then((r) => r.json()),
-      fetch(`/api/messages?team_id=${teamId}&limit=100`, { credentials: 'include' }).then((r) => r.json()),
-      fetch(`/api/bookmarks?team_id=${teamId}`, { credentials: 'include' }).then((r) => r.json()),
-      fetch(`/api/navigation/systems`, { credentials: 'include' }).then((r) => r.json()),
+      safeFetch(`/api/units?team_id=${teamId}`, creds),
+      safeFetch(`/api/groups?team_id=${teamId}`, creds),
+      safeFetch(`/api/contacts?team_id=${teamId}&active_only=true`, creds),
+      safeFetch(`/api/tasks?team_id=${teamId}`, creds),
+      safeFetch(`/api/operations?team_id=${teamId}`, creds),
+      safeFetch(`/api/events?team_id=${teamId}&limit=100`, creds),
+      safeFetch(`/api/messages?team_id=${teamId}&limit=100`, creds),
+      safeFetch(`/api/bookmarks?team_id=${teamId}`, creds),
+      safeFetch(`/api/navigation/systems`, creds),
+      safeFetch(`/api/waypoints?team_id=${teamId}`, creds),
     ])
-      .then(([units, groups, contacts, tasks, operations, events, messages, bookmarks, systems]) => {
+      .then(([units, groups, contacts, tasks, operations, events, messages, bookmarks, systems, waypoints]) => {
         setUnits(Array.isArray(units) ? units : []);
         setGroups(Array.isArray(groups) ? groups : []);
         setContacts(Array.isArray(contacts) ? contacts : []);
@@ -39,12 +58,12 @@ export default function MapPage() {
         setEvents(Array.isArray(events) ? events : []);
         setMessages(Array.isArray(messages) ? messages : []);
         setBookmarks(Array.isArray(bookmarks) ? bookmarks : []);
+        setWaypoints(Array.isArray(waypoints) ? waypoints : []);
 
         // Load first system navigation data
         if (Array.isArray(systems) && systems.length > 0) {
           setActiveSystemId(systems[0].id);
-          fetch(`/api/navigation/systems/${systems[0].id}`, { credentials: 'include' })
-            .then((r) => r.json())
+          safeFetch(`/api/navigation/systems/${systems[0].id}`, creds, {})
             .then((data) => {
               setNavData({
                 systems,
@@ -52,16 +71,16 @@ export default function MapPage() {
                 points: data.navigation_points || [],
                 edges: data.jump_edges || [],
               });
-            })
-            .catch(() => {});
+            });
         } else {
           setNavData({ systems: Array.isArray(systems) ? systems : [], bodies: [], points: [], edges: [] });
         }
 
         setLastSyncTime(new Date().toISOString());
       })
-      .catch(() => {
-        // Using cached data if offline
+      .catch((err) => {
+        console.warn('[KRT] Initial data load failed:', err.message);
+        toast.error('Failed to load data — using cache');
       });
 
     // Connect WebSocket

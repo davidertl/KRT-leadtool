@@ -72,6 +72,8 @@ export default function UnitDetailPanel({ unitId, onClose }) {
     );
   }
 
+  const { updateUnit: storeUpdateUnit, removeUnit: storeRemoveUnit } = useMissionStore();
+
   const handleStatusChange = async (newStatus) => {
     try {
       const res = await fetch(`/api/units/${unit.id}`, {
@@ -81,6 +83,8 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error('Failed to update status');
+      const updated = await res.json();
+      storeUpdateUnit(updated);
       toast.success(`Status → ${newStatus}`);
     } catch {
       toast.error('Failed to update status');
@@ -96,6 +100,8 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         body: JSON.stringify({ name: editName, notes: editNotes || null }),
       });
       if (!res.ok) throw new Error('Failed to update');
+      const updated = await res.json();
+      storeUpdateUnit(updated);
       setEditing(false);
       toast.success('Unit updated');
     } catch {
@@ -111,6 +117,7 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to delete');
+      storeRemoveUnit(unit.id);
       toast.success('Unit deleted');
       onClose();
     } catch {
@@ -345,16 +352,21 @@ export default function UnitDetailPanel({ unitId, onClose }) {
             </button>
           </div>
           <div className="space-y-1 max-h-32 overflow-y-auto">
-            {history.map((h) => (
-              <div key={h.id} className="text-xs bg-krt-bg rounded px-2 py-1">
-                <span className="text-gray-400">{h.field_changed}:</span>{' '}
-                <span className="text-red-400 line-through">{JSON.parse(h.old_value || 'null')}</span>{' '}
-                <span className="text-green-400">→ {JSON.parse(h.new_value || 'null')}</span>
-                <span className="text-gray-600 ml-2">
-                  {h.changed_by_name && `by ${h.changed_by_name}`}
-                </span>
-              </div>
-            ))}
+            {history.map((h) => {
+              let oldVal, newVal;
+              try { oldVal = JSON.parse(h.old_value || 'null'); } catch { oldVal = h.old_value; }
+              try { newVal = JSON.parse(h.new_value || 'null'); } catch { newVal = h.new_value; }
+              return (
+                <div key={h.id} className="text-xs bg-krt-bg rounded px-2 py-1">
+                  <span className="text-gray-400">{h.field_changed}:</span>{' '}
+                  <span className="text-red-400 line-through">{String(oldVal ?? '')}</span>{' '}
+                  <span className="text-green-400">→ {String(newVal ?? '')}</span>
+                  <span className="text-gray-600 ml-2">
+                    {h.changed_by_name && `by ${h.changed_by_name}`}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

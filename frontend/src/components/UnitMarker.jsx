@@ -131,6 +131,11 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
     // Click is handled by pointerUp when drag distance is small
   }, []);
 
+  const handleDoubleClick = useCallback((e) => {
+    e.stopPropagation();
+    // Prevent double-click from propagating and causing issues
+  }, []);
+
   return (
     <group
       ref={groupRef}
@@ -140,6 +145,7 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
       <mesh
         ref={meshRef}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -167,9 +173,9 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
       {/* Heading indicator (direction line) */}
       <mesh
         position={[
-          Math.sin((unit.heading * Math.PI) / 180) * (markerSize + 10),
+          Math.sin(((unit.heading || 0) * Math.PI) / 180) * (markerSize + 10),
           0,
-          Math.cos((unit.heading * Math.PI) / 180) * (markerSize + 10),
+          Math.cos(((unit.heading || 0) * Math.PI) / 180) * (markerSize + 10),
         ]}
       >
         <sphereGeometry args={[2, 8, 8]} />

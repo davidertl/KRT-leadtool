@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
  * Bookmarks panel — save and navigate to map locations
  */
 export default function BookmarkPanel({ teamId }) {
-  const { bookmarks, focusUnit } = useMissionStore();
+  const { bookmarks, focusPosition } = useMissionStore();
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const [posX, setPosX] = useState(0);
@@ -119,6 +119,7 @@ export default function BookmarkPanel({ teamId }) {
         <div
           key={bm.id}
           className="p-2 rounded-lg bg-krt-bg/50 border border-transparent hover:border-krt-border cursor-pointer group"
+          onClick={() => focusPosition({ x: bm.pos_x || 0, y: bm.pos_y || 0, z: bm.pos_z || 0 })}
         >
           <div className="flex items-center gap-2">
             <span className="text-sm">{bm.icon || '📌'}</span>

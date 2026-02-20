@@ -260,9 +260,14 @@ export default function Sidebar({ onBack }) {
                   Clear selection
                 </button>
                 <BatchStatusUpdate unitIds={selectedUnitIds} teamId={teamId} />
-                {selectedUnits.map((unit) => (
-                  <UnitListItem key={unit.id} unit={unit} isSelected />
-                ))}
+                {selectedUnits.map((unit) => {
+                  const group = groups.find((g) => g.id === unit.group_id);
+                  return (
+                    <UnitListItem key={unit.id} unit={unit} group={group} isSelected
+                      onDoubleClick={() => setDetailUnitId(unit.id)}
+                    />
+                  );
+                })}
               </>
             )}
           </div>
@@ -360,17 +365,27 @@ function StatusBadge({ status }) {
 }
 
 /** Create unit form */
+const MAP_SCALE = 1e6; // must match NavPointMarker
+const SPAWNABLE_NAV_TYPES = ['station', 'rest_stop', 'outpost'];
+
 function CreateUnitForm({ teamId, groups, onClose }) {
+  const { navData } = useMissionStore();
   const [name, setName] = useState('');
   const [callsign, setCallsign] = useState('');
   const [shipType, setShipType] = useState('');
   const [unitType, setUnitType] = useState('ship');
   const [groupId, setGroupId] = useState('');
+  const [stationId, setStationId] = useState('');
   const [role, setRole] = useState('');
   const [crewCount, setCrewCount] = useState(1);
   const [crewMax, setCrewMax] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+
+  // Spawnable locations sorted alphabetically
+  const spawnLocations = (navData?.points || [])
+    .filter((p) => SPAWNABLE_NAV_TYPES.includes(p.nav_type) && p.active !== false)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const UNIT_TYPES = [
     { value: 'ship', label: '🚀 Ship' },
@@ -383,8 +398,18 @@ function CreateUnitForm({ teamId, groups, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!stationId) {
+      setError('Please select a starting location');
+      return;
+    }
     setSubmitting(true);
     setError(null);
+
+    // Look up selected station and convert to map-space coordinates
+    const station = spawnLocations.find((p) => p.id === stationId);
+    const spawnX = station ? (station.pos_x || 0) / MAP_SCALE : 0;
+    const spawnY = station ? (station.pos_y || 0) / MAP_SCALE : 0;
+    const spawnZ = station ? (station.pos_z || 0) / MAP_SCALE : 0;
 
     try {
       const res = await fetch('/api/units', {
@@ -401,6 +426,9 @@ function CreateUnitForm({ teamId, groups, onClose }) {
           role: role || null,
           crew_count: crewCount,
           crew_max: crewMax ? parseInt(crewMax) : null,
+          pos_x: spawnX,
+          pos_y: spawnY,
+          pos_z: spawnZ,
         }),
       });
 
@@ -465,6 +493,18 @@ function CreateUnitForm({ teamId, groups, onClose }) {
         placeholder="Role (e.g. Fighter escort, Medical)"
         className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
       />
+      <select
+        value={stationId}
+        onChange={(e) => setStationId(e.target.value)}
+        className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+      >
+        <option value="">Starting location *</option>
+        {spawnLocations.map((loc) => (
+          <option key={loc.id} value={loc.id}>
+            {loc.name} ({loc.nav_type.replace('_', ' ')})
+          </option>
+        ))}
+      </select>
       <div className="grid grid-cols-2 gap-2">
         <select
           value={groupId}
@@ -587,13 +627,22 @@ function CreateGroupForm({ teamId, onClose }) {
 /** Batch status update for selected units */
 function BatchStatusUpdate({ unitIds, teamId }) {
   const handleStatusChange = async (newStatus) => {
-    for (const id of unitIds) {
-      await fetch(`/api/units/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ status: newStatus }),
-      });
+    try {
+      for (const id of unitIds) {
+        const res = await fetch(`/api/units/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          useMissionStore.getState().updateUnit(updated);
+        }
+      }
+      toast.success(`${unitIds.length} unit(s) → ${newStatus}`);
+    } catch {
+      toast.error('Failed to update some units');
     }
   };
 
@@ -626,19 +675,35 @@ const IFF_COLORS = {
 /** Contact list item */
 function ContactListItem({ contact, inactive }) {
   const handleDeactivate = async () => {
-    await fetch(`/api/contacts/${contact.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ is_active: !contact.is_active }),
-    });
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ is_active: !contact.is_active }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        useMissionStore.getState().updateContact(updated);
+      }
+    } catch {
+      toast.error('Failed to update contact');
+    }
   };
 
   const handleDelete = async () => {
-    await fetch(`/api/contacts/${contact.id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        useMissionStore.getState().removeContact(contact.id);
+        toast.success('Contact deleted');
+      }
+    } catch {
+      toast.error('Failed to delete contact');
+    }
   };
 
   const colors = IFF_COLORS[contact.iff] || IFF_COLORS.unknown;
@@ -689,12 +754,21 @@ const TASK_STATUS_OPTIONS = ['pending', 'assigned', 'in_progress', 'completed', 
 /** Task list item */
 function TaskListItem({ task, completed }) {
   const handleStatusChange = async (newStatus) => {
-    await fetch(`/api/tasks/${task.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ status: newStatus }),
-    });
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        useMissionStore.getState().updateTask(updated);
+        toast.success(`Task → ${newStatus}`);
+      }
+    } catch {
+      toast.error('Failed to update task');
+    }
   };
 
   const colors = PRIORITY_COLORS_MAP[task.priority] || PRIORITY_COLORS_MAP.normal;
