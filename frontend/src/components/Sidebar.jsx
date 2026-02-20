@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useMissionStore } from '../stores/missionStore';
 import { useAuthStore } from '../stores/authStore';
 import SearchFilter from './SearchFilter';
@@ -192,7 +192,7 @@ export default function Sidebar({ onBack }) {
             {groups.map((group) => {
               const groupUnits = units.filter((u) => u.group_id === group.id);
               return (
-                <GroupListItem key={group.id} group={group} unitCount={groupUnits.length} />
+                <GroupListItem key={group.id} group={group} unitCount={groupUnits.length} canEdit={canCreateGroups} />
               );
             })}
           </div>
@@ -361,12 +361,97 @@ function UnitListItem({ unit, group, isSelected, onDoubleClick }) {
   );
 }
 
-/** Group in the sidebar list */
-function GroupListItem({ group, unitCount }) {
+/** Group in the sidebar list — with inline edit / delete */
+function GroupListItem({ group, unitCount, canEdit }) {
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(group.name);
+  const [editMission, setEditMission] = useState(group.mission);
+  const [editColor, setEditColor] = useState(group.color);
+  const [saving, setSaving] = useState(false);
+
   const mission = MISSION_TYPES.find((m) => m.value === group.mission);
 
+  const handleSave = async () => {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      const mType = MISSION_TYPES.find((m) => m.value === editMission);
+      const res = await fetch(`/api/groups/${group.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: editName.trim(),
+          mission: editMission,
+          color: mType?.color || editColor,
+        }),
+      });
+      if (res.ok) {
+        toast.success('Group updated');
+        setEditing(false);
+      } else {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error || 'Failed to update group');
+      }
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete group "${group.name}"? Units will be ungrouped.`)) return;
+    try {
+      const res = await fetch(`/api/groups/${group.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        toast.success('Group deleted');
+      } else {
+        toast.error('Failed to delete group');
+      }
+    } catch {
+      toast.error('Network error');
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="p-3 rounded-lg bg-krt-bg/80 border border-krt-accent/40 space-y-2">
+        <input
+          type="text"
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
+          autoFocus
+        />
+        <select
+          value={editMission}
+          onChange={(e) => setEditMission(e.target.value)}
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+        >
+          {MISSION_TYPES.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </select>
+        <div className="flex gap-2">
+          <button onClick={handleSave} disabled={saving} className="bg-krt-accent text-white text-sm px-3 py-1 rounded disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={() => setEditing(false)} className="text-gray-400 text-sm px-3 py-1">Cancel</button>
+          <button onClick={handleDelete} className="text-red-400 hover:text-red-300 text-sm px-3 py-1 ml-auto">Delete</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-3 rounded-lg bg-krt-bg/50 border border-transparent hover:border-krt-border">
+    <div
+      onClick={() => canEdit && setEditing(true)}
+      className={`p-3 rounded-lg bg-krt-bg/50 border border-transparent hover:border-krt-border ${canEdit ? 'cursor-pointer' : ''}`}
+    >
       <div className="flex items-center gap-2">
         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
         <span className="text-sm font-medium">{group.name}</span>
@@ -416,6 +501,49 @@ function CreateUnitForm({ teamId, groups, onClose }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
+  // Vehicle name search / dropdown state
+  const [vehicleList, setVehicleList] = useState([]);
+  const [vehicleSearch, setVehicleSearch] = useState('');
+  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  const vehicleRef = useRef(null);
+
+  // Fetch vehicle names when unitType is ship or ground_vehicle
+  useEffect(() => {
+    if (unitType === 'person') { setVehicleList([]); return; }
+    const category = unitType === 'ground_vehicle' ? 'ground_vehicle' : 'ship';
+    fetch(`/api/ship-images/names?category=${category}`, { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setVehicleList(Array.isArray(data) ? data : []))
+      .catch(() => setVehicleList([]));
+  }, [unitType]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (vehicleRef.current && !vehicleRef.current.contains(e.target)) {
+        setShowVehicleDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Filter vehicle list by search text
+  const filteredVehicles = vehicleSearch
+    ? vehicleList.filter((v) =>
+        v.ship_type.toLowerCase().includes(vehicleSearch.toLowerCase()) ||
+        (v.manufacturer && v.manufacturer.toLowerCase().includes(vehicleSearch.toLowerCase()))
+      )
+    : vehicleList;
+
+  // Group filtered vehicles by manufacturer
+  const groupedVehicles = filteredVehicles.reduce((acc, v) => {
+    const mfr = v.manufacturer || 'Unknown';
+    if (!acc[mfr]) acc[mfr] = [];
+    acc[mfr].push(v);
+    return acc;
+  }, {});
+
   // Available ships/vehicles for person assignment
   const availableShips = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.team_id === teamId);
 
@@ -457,6 +585,9 @@ function CreateUnitForm({ teamId, groups, onClose }) {
     setSubmitting(true);
     setError(null);
 
+    // Use vehicleSearch as fallback if no selection was made from dropdown
+    const finalShipType = shipType || vehicleSearch || null;
+
     try {
       const res = await fetch('/api/units', {
         method: 'POST',
@@ -465,7 +596,7 @@ function CreateUnitForm({ teamId, groups, onClose }) {
         body: JSON.stringify({
           name: name.trim(),
           callsign: callsign || null,
-          ship_type: shipType || null,
+          ship_type: finalShipType,
           unit_type: unitType,
           team_id: teamId,
           group_id: groupId || null,
@@ -518,20 +649,72 @@ function CreateUnitForm({ teamId, groups, onClose }) {
       <div className="grid grid-cols-2 gap-2">
         <select
           value={unitType}
-          onChange={(e) => setUnitType(e.target.value)}
+          onChange={(e) => { setUnitType(e.target.value); setShipType(''); setVehicleSearch(''); }}
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
         >
           {UNIT_TYPES.map((ut) => (
             <option key={ut.value} value={ut.value}>{ut.label}</option>
           ))}
         </select>
-        <input
-          type="text"
-          value={shipType}
-          onChange={(e) => setShipType(e.target.value)}
-          placeholder="Ship type (e.g. Carrack)"
-          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
-        />
+        {unitType !== 'person' ? (
+          <div className="relative" ref={vehicleRef}>
+            <input
+              type="text"
+              value={shipType || vehicleSearch}
+              onChange={(e) => {
+                setVehicleSearch(e.target.value);
+                setShipType('');
+                setShowVehicleDropdown(true);
+              }}
+              onFocus={() => setShowVehicleDropdown(true)}
+              placeholder={unitType === 'ground_vehicle' ? 'Search vehicle…' : 'Search ship…'}
+              className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
+            />
+            {shipType && (
+              <button
+                type="button"
+                onClick={() => { setShipType(''); setVehicleSearch(''); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs"
+              >✕</button>
+            )}
+            {showVehicleDropdown && filteredVehicles.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto bg-krt-panel border border-krt-border rounded shadow-lg">
+                {Object.entries(groupedVehicles).map(([mfr, vehicles]) => (
+                  <div key={mfr}>
+                    <div className="px-3 py-1 text-[10px] font-bold text-gray-500 bg-krt-bg/60 sticky top-0">{mfr}</div>
+                    {vehicles.map((v) => (
+                      <button
+                        key={v.ship_type}
+                        type="button"
+                        onClick={() => {
+                          setShipType(v.ship_type);
+                          setVehicleSearch('');
+                          setShowVehicleDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-krt-accent/20 transition-colors"
+                      >
+                        {v.ship_type}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            {showVehicleDropdown && vehicleSearch && filteredVehicles.length === 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-krt-panel border border-krt-border rounded shadow-lg px-3 py-2 text-xs text-gray-500">
+                No matches — type will be used as-is
+              </div>
+            )}
+          </div>
+        ) : (
+          <input
+            type="text"
+            value={shipType}
+            onChange={(e) => setShipType(e.target.value)}
+            placeholder="Equipment (optional)"
+            className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
+          />
+        )}
       </div>
       <input
         type="text"

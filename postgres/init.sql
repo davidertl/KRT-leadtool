@@ -417,6 +417,8 @@ CREATE TABLE ship_images (
     ship_type       VARCHAR(128) UNIQUE NOT NULL,     -- matches units.ship_type
     image_url       TEXT NOT NULL,                     -- cached/proxied image URL
     thumbnail_url   TEXT,
+    vehicle_category VARCHAR(32) DEFAULT 'ship',      -- 'ship', 'ground_vehicle', 'gravlev'
+    manufacturer    VARCHAR(128),                      -- e.g. 'Aegis Dynamics'
     source          VARCHAR(64) DEFAULT 'manual',     -- 'manual', 'sc_wiki', etc.
     source_url      TEXT,                              -- original source URL for attribution
     license         VARCHAR(128) DEFAULT 'CC-BY-NC-SA 4.0',

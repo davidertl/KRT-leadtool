@@ -5,9 +5,48 @@
 
 const router = require('express').Router();
 const { query } = require('../db/postgres');
+const { valkey } = require('../db/valkey');
 const { requireAuth } = require('../auth/jwt');
 
 const SC_WIKI_API = 'https://api.star-citizen.wiki/api/v2/vehicles';
+const NAMES_CACHE_TTL = 86400; // 24 hours
+
+/** Derive a vehicle_category from Wiki API booleans */
+function deriveCategory(vehicle) {
+  if (vehicle.is_gravlev) return 'gravlev';
+  if (vehicle.is_vehicle) return 'ground_vehicle';
+  return 'ship'; // default — is_spaceship or unclassified
+}
+
+/**
+ * GET /api/ship-images/names?category=ship|ground_vehicle|gravlev
+ * Lightweight list of vehicle names + manufacturer, cached in Valkey.
+ */
+router.get('/names', requireAuth, async (req, res, next) => {
+  try {
+    const { category } = req.query; // optional filter
+    const cacheKey = `ship_names:${category || 'all'}`;
+
+    // Try Valkey cache first
+    const cached = await valkey.get(cacheKey).catch(() => null);
+    if (cached) return res.json(JSON.parse(cached));
+
+    let sql = `SELECT ship_type, manufacturer, vehicle_category FROM ship_images`;
+    const params = [];
+    if (category) {
+      sql += ` WHERE vehicle_category = $1`;
+      params.push(category);
+    }
+    sql += ` ORDER BY manufacturer ASC NULLS LAST, ship_type ASC`;
+
+    const result = await query(sql, params);
+
+    // Cache for 24 hours
+    await valkey.set(cacheKey, JSON.stringify(result.rows), 'EX', NAMES_CACHE_TTL).catch(() => {});
+
+    res.json(result.rows);
+  } catch (err) { next(err); }
+});
 
 /**
  * GET /api/ship-images
@@ -172,15 +211,23 @@ router.post('/sync-all', requireAuth, async (req, res, next) => {
         if (!imageUrl || !vehicle.name) continue;
 
         const thumbnailUrl = vehicle.media?.store_image?.sizes?.small || null;
+        const category = deriveCategory(vehicle);
+        const manufacturer = vehicle.manufacturer?.name || null;
 
         await query(
-          `INSERT INTO ship_images (ship_type, image_url, thumbnail_url, source, source_url, license, license_url, author)
-           VALUES ($1, $2, $3, 'sc_wiki', $4, 'CC-BY-NC-SA 4.0', 'https://creativecommons.org/licenses/by-nc-sa/4.0/', 'Star Citizen Wiki Community')
-           ON CONFLICT (ship_type) DO NOTHING`,
+          `INSERT INTO ship_images (ship_type, image_url, thumbnail_url, vehicle_category, manufacturer, source, source_url, license, license_url, author)
+           VALUES ($1, $2, $3, $4, $5, 'sc_wiki', $6, 'CC-BY-NC-SA 4.0', 'https://creativecommons.org/licenses/by-nc-sa/4.0/', 'Star Citizen Wiki Community')
+           ON CONFLICT (ship_type) DO UPDATE SET
+             image_url = EXCLUDED.image_url,
+             thumbnail_url = EXCLUDED.thumbnail_url,
+             vehicle_category = EXCLUDED.vehicle_category,
+             manufacturer = EXCLUDED.manufacturer`,
           [
             vehicle.name,
             imageUrl,
             thumbnailUrl,
+            category,
+            manufacturer,
             vehicle.link || `https://starcitizen.tools/${encodeURIComponent(vehicle.name)}`,
           ]
         );
@@ -194,6 +241,10 @@ router.post('/sync-all', requireAuth, async (req, res, next) => {
       }
       page++;
     }
+
+    // Invalidate name caches
+    const keys = await valkey.keys('ship_names:*').catch(() => []);
+    if (keys.length > 0) await valkey.del(...keys).catch(() => {});
 
     res.json({ synced: totalSynced, message: `Synced ${totalSynced} ship images from Wiki API` });
   } catch (err) { next(err); }
