@@ -15,9 +15,12 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
     volumes:
       - ./nginx/docker-entrypoint.sh:/custom-entrypoint.sh:ro
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/default-http.conf:/etc/nginx/templates/http-only.conf:ro
+      - ./nginx/default-ssl.conf:/etc/nginx/templates/ssl.conf.template:ro
       - certbot-webroot:/var/www/certbot:ro
       - certbot-certs:/etc/letsencrypt
       - frontend-build:/usr/share/nginx/html:ro

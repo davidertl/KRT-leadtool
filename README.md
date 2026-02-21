@@ -214,8 +214,8 @@ docker compose up -d
 ## Navigation Database
 
 Right now the navigation database is seeded with the Stanton system (star, planets, moons) and a selection of nav points (stations, rest stops, Lagrange points, comm arrays, jump points, outposts).
-All Ships, Persons, POIs or 
-Coordinates are in meters (system-local). The 3D map uses a 1:1,000,000 scale factor for rendering. (?)
+All Ships, Persons, POIs or Coordinates are in meters (system-local). The 3D map uses a 1:1,000,000 scale factor for rendering. (?)
+
 **note for myself** - need to verify the scale factor and coordinate system with in-game data, 'may' require adjustments. ;-) 
 
 ## What's planned
