@@ -100,7 +100,7 @@ function UnitListItem({ unit, group, isSelected }) {
 }
 
 /* ─── GroupListItem ────────────────── */
-function GroupListItem({ group, unitCount, canEdit }) {
+function GroupListItem({ group, vehicleCount, personCount, canEdit }) {
   const { units } = useMissionStore();
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group.name);
@@ -272,7 +272,7 @@ function GroupListItem({ group, unitCount, canEdit }) {
       <div className="flex items-center gap-2">
         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
         <span className="text-sm font-medium">{group.name}</span>
-        <span className="text-xs text-gray-500 ml-auto">{unitCount} units</span>
+        <span className="text-xs text-gray-500 ml-auto">{vehicleCount} 🚀 · {personCount} 👤</span>
       </div>
       <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
         <span>{classType?.label || group.class_type}</span>
@@ -673,11 +673,14 @@ function UnitsPopup({ missionId }) {
   const vehicleUnits = units.filter((u) => u.unit_type !== 'person');
 
   const filtered = vehicleUnits.filter((u) => {
-    if (statusFilter && u.status !== statusFilter) return false;
+    if (statusFilter.length > 0 && !statusFilter.includes(u.status)) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const group = groups.find((g) => g.id === u.group_id);
-      return u.name.toLowerCase().includes(q) || (u.ship_type && u.ship_type.toLowerCase().includes(q)) || (group && group.name.toLowerCase().includes(q));
+      // Also search names of persons assigned to this unit
+      const personsAboard = units.filter((p) => p.unit_type === 'person' && p.parent_unit_id === u.id);
+      const personMatch = personsAboard.some((p) => p.name.toLowerCase().includes(q));
+      return u.name.toLowerCase().includes(q) || (u.ship_type && u.ship_type.toLowerCase().includes(q)) || (group && group.name.toLowerCase().includes(q)) || personMatch;
     }
     return true;
   });
@@ -713,7 +716,9 @@ function GroupsPopup({ missionId }) {
         {showCreate && <CreateGroupForm missionId={missionId} onClose={() => setShowCreate(false)} />}
         {groups.map((group) => {
           const groupUnits = units.filter((u) => u.group_id === group.id);
-          return <GroupListItem key={group.id} group={group} unitCount={groupUnits.length} canEdit={canCreate} />;
+          const vehicleCount = groupUnits.filter((u) => u.class_type !== 'person').length;
+          const personCount = groupUnits.filter((u) => u.class_type === 'person').length;
+          return <GroupListItem key={group.id} group={group} vehicleCount={vehicleCount} personCount={personCount} canEdit={canCreate} />;
         })}
       </div>
     </PopupWindow>

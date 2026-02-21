@@ -30,12 +30,16 @@ export const useMissionStore = create((set, get) => ({
   focusedUnitId: null,
   focusedPosition: null,
   searchQuery: '',
-  statusFilter: null,
+  statusFilter: [],
   activeSystemId: null,
 
   setMissionId: (missionId) => set({ missionId }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setStatusFilter: (s) => set({ statusFilter: s }),
+  toggleStatusFilter: (s) => set((state) => {
+    const cur = state.statusFilter;
+    return { statusFilter: cur.includes(s) ? cur.filter((v) => v !== s) : [...cur, s] };
+  }),
   focusUnit: (id) => set({ focusedUnitId: id, focusedPosition: null }),
   focusPosition: (pos) => set({ focusedPosition: pos, focusedUnitId: null }),
   clearFocus: () => set({ focusedUnitId: null, focusedPosition: null }),

@@ -3,7 +3,9 @@ import { useMissionStore } from '../stores/missionStore';
 import { STATUS_OPTIONS } from '../lib/constants';
 
 export default function SearchFilter() {
-  const { searchQuery, statusFilter, setSearchQuery, setStatusFilter } = useMissionStore();
+  const { searchQuery, statusFilter, setSearchQuery, setStatusFilter, toggleStatusFilter } = useMissionStore();
+
+  const allSelected = statusFilter.length === 0;
 
   return (
     <div className="p-3 border-b border-krt-border space-y-2">
@@ -13,7 +15,7 @@ export default function SearchFilter() {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search units / ships…"
+          placeholder="Search units / ships / persons…"
           className="w-full bg-krt-bg border border-krt-border rounded-lg pl-8 pr-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
         />
         <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -29,12 +31,12 @@ export default function SearchFilter() {
         )}
       </div>
 
-      {/* Status filter pills */}
+      {/* Status filter pills — multi-select */}
       <div className="flex flex-wrap gap-1">
         <button
-          onClick={() => setStatusFilter(null)}
+          onClick={() => setStatusFilter([])}
           className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
-            !statusFilter
+            allSelected
               ? 'bg-krt-accent text-white'
               : 'bg-krt-bg text-gray-400 hover:text-white'
           }`}
@@ -44,9 +46,9 @@ export default function SearchFilter() {
         {STATUS_OPTIONS.map((s) => (
           <button
             key={s}
-            onClick={() => setStatusFilter(statusFilter === s ? null : s)}
+            onClick={() => toggleStatusFilter(s)}
             className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
-              statusFilter === s
+              statusFilter.includes(s)
                 ? 'bg-krt-accent text-white'
                 : 'bg-krt-bg text-gray-400 hover:text-white'
             }`}
