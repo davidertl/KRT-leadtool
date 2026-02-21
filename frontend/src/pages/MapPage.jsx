@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useMissionStore } from '../stores/missionStore';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import SpaceMap from '../components/SpaceMap';
-import Sidebar from '../components/Sidebar';
+import MenuBar from '../components/MenuBar';
+import PopupPanels from '../components/PopupPanels';
 import OnlineUsers from '../components/OnlineUsers';
 import ConnectionStatus from '../components/ConnectionStatus';
 import toast from 'react-hot-toast';
@@ -109,15 +110,16 @@ export default function MapPage() {
   }, [missionId]);
 
   return (
-    <div className="flex h-screen w-screen bg-krt-bg overflow-hidden">
-      {/* Sidebar */}
-      <Sidebar onBack={() => navigate('/')} />
+    <div className="flex flex-col h-screen w-screen bg-krt-bg overflow-hidden">
+      {/* Horizontal menu bar at the top */}
+      <MenuBar />
 
-      {/* 3D Map */}
+      {/* Full-width 3D map with floating popup windows */}
       <div className="flex-1 relative">
         <SpaceMap />
         <ConnectionStatus />
         <OnlineUsers />
+        <PopupPanels />
       </div>
     </div>
   );
