@@ -30,6 +30,9 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/src ./src
 COPY backend/package.json ./
 
+# Copy navigation seed data
+COPY postgres/seed_stanton.sql ./seed/seed_stanton.sql
+
 # Set ownership
 RUN chown -R krt:krt /app
 

@@ -5,6 +5,7 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
+const { seedNavigation } = require('../db/seed');
 
 // ============================================================
 // Star Systems
@@ -216,6 +217,49 @@ router.get('/route', requireAuth, async (req, res, next) => {
       route: path.map((id) => pointMap[id]),
       distance: dist[to],
       reachable: true,
+    });
+  } catch (err) { next(err); }
+});
+
+// ============================================================
+// Reseed Navigation Data (owner trigger from UI)
+// ============================================================
+
+/** POST /api/navigation/reseed — re-run seed_stanton.sql (idempotent) */
+router.post('/reseed', requireAuth, async (req, res, next) => {
+  try {
+    const ok = await seedNavigation();
+    if (!ok) {
+      return res.status(500).json({ error: 'Seed file not found or execution failed' });
+    }
+
+    // Return fresh system list so the client can immediately refresh
+    const systems = await query('SELECT * FROM star_systems WHERE active = true ORDER BY name ASC');
+    let systemData = {};
+    if (systems.rows.length > 0) {
+      const sid = systems.rows[0].id;
+      const bodies = await query('SELECT * FROM celestial_bodies WHERE system_id = $1 AND active = true ORDER BY name ASC', [sid]);
+      const points = await query('SELECT * FROM navigation_points WHERE system_id = $1 AND active = true ORDER BY name ASC', [sid]);
+      const edges = await query(
+        `SELECT je.*, np_from.name AS from_name, np_to.name AS to_name
+         FROM jump_edges je
+         JOIN navigation_points np_from ON np_from.id = je.from_nav_id
+         JOIN navigation_points np_to ON np_to.id = je.to_nav_id
+         WHERE np_from.system_id = $1 OR np_to.system_id = $1
+         ORDER BY je.distance ASC`, [sid]
+      );
+      systemData = {
+        celestial_bodies: bodies.rows,
+        navigation_points: points.rows,
+        jump_edges: edges.rows,
+      };
+    }
+
+    res.json({
+      success: true,
+      message: 'Navigation data reseeded',
+      systems: systems.rows,
+      ...systemData,
     });
   } catch (err) { next(err); }
 });

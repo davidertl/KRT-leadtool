@@ -10,6 +10,7 @@ const app = require('./app');
 const { initSocketIO } = require('./socket');
 const { testConnection: testDB } = require('./db/postgres');
 const { testConnection: testValkey } = require('./db/valkey');
+const { seedNavigation } = require('./db/seed');
 
 const PORT = process.env.APP_PORT || 3000;
 
@@ -17,6 +18,9 @@ async function start() {
   // Test database connections
   await testDB();
   await testValkey();
+
+  // Seed navigation data (idempotent — safe on every startup)
+  await seedNavigation();
 
   // Create HTTP server and attach Socket.IO
   const server = http.createServer(app);

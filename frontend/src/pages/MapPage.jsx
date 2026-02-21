@@ -83,15 +83,21 @@ export default function MapPage() {
           setActiveSystemId(systems[0].id);
           safeFetch(`/api/navigation/systems/${systems[0].id}`, creds, {})
             .then((data) => {
+              const bodies = data.celestial_bodies || [];
+              const points = data.navigation_points || [];
               setNavData({
                 systems,
-                bodies: data.celestial_bodies || [],
-                points: data.navigation_points || [],
+                bodies,
+                points,
                 edges: data.jump_edges || [],
               });
+              if (bodies.length === 0 && points.length === 0) {
+                toast('No star map data loaded — use "Update Starmap" in Multiplayer settings', { icon: '⚠️' });
+              }
             });
         } else {
           setNavData({ systems: Array.isArray(systems) ? systems : [], bodies: [], points: [], edges: [] });
+          toast('No star systems found — use "Update Starmap" in Multiplayer settings', { icon: '⚠️' });
         }
 
         setLastSyncTime(new Date().toISOString());

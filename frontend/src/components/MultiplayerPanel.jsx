@@ -33,6 +33,9 @@ export default function MultiplayerPanel({ missionId }) {
       {/* Public / Private toggle (gesamtlead only) */}
       {myMissionRole === 'gesamtlead' && <VisibilityToggle missionId={missionId} />}
 
+      {/* Update Starmap (gesamtlead only) */}
+      {myMissionRole === 'gesamtlead' && <UpdateStarmapButton />}
+
       {/* Pending join requests */}
       {canManage && joinRequests.length > 0 && (
         <div>
@@ -74,6 +77,59 @@ export default function MultiplayerPanel({ missionId }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Reseed + refresh star map navigation data */
+function UpdateStarmapButton() {
+  const { setNavData, setActiveSystemId } = useMissionStore();
+  const [loading, setLoading] = useState(false);
+
+  const handleUpdate = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/navigation/reseed', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Reseed failed');
+      const data = await res.json();
+
+      // Update store with fresh navigation data
+      if (Array.isArray(data.systems) && data.systems.length > 0) {
+        setActiveSystemId(data.systems[0].id);
+      }
+      setNavData({
+        systems: data.systems || [],
+        bodies: data.celestial_bodies || [],
+        points: data.navigation_points || [],
+        edges: data.jump_edges || [],
+      });
+
+      toast.success(`Starmap updated — ${(data.celestial_bodies || []).length} bodies, ${(data.navigation_points || []).length} nav points`);
+    } catch {
+      toast.error('Failed to update starmap');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="bg-krt-bg/80 rounded-lg p-3 flex items-center justify-between">
+      <div>
+        <label className="text-xs text-gray-500 block">Star Map</label>
+        <span className="text-sm font-medium text-blue-400">🗺️ Navigation Data</span>
+        <p className="text-[10px] text-gray-600">
+          Reload star systems, stations &amp; nav points from seed data
+        </p>
+      </div>
+      <button
+        onClick={handleUpdate}
+        disabled={loading}
+        className="text-xs px-3 py-1 rounded border border-blue-500/40 text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50"
+      >
+        {loading ? 'Updating…' : 'Update Starmap'}
+      </button>
     </div>
   );
 }
