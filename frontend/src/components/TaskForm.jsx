@@ -40,7 +40,7 @@ const ROE_OPTIONS = [
  * Create new task / order form
  */
 export default function TaskForm({ missionId, onClose }) {
-  const { units, groups, contacts, tasks, operationPhases, operations } = useMissionStore();
+  const { units, groups, contacts, tasks, operationPhases, operations, navData } = useMissionStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskType, setTaskType] = useState('custom');
@@ -55,8 +55,9 @@ export default function TaskForm({ missionId, onClose }) {
   const [startAt, setStartAt] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [dependsOn, setDependsOn] = useState('');
-  const [startNow, setStartNow] = useState(false);
+  const [startNow, setStartNow] = useState(true);
   const [phaseId, setPhaseId] = useState('');
+  const [targetNavPoint, setTargetNavPoint] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // When a contact is selected, auto-fill position
@@ -64,6 +65,33 @@ export default function TaskForm({ missionId, onClose }) {
     setTargetContact(contactId);
     if (contactId) {
       const c = contacts.find((con) => con.id === contactId);
+      if (c) {
+        setTargetX(c.pos_x?.toString() || '');
+        setTargetY(c.pos_y?.toString() || '');
+        setTargetZ(c.pos_z?.toString() || '');
+        setTargetNavPoint('');
+      }
+    }
+  };
+
+  // When a nav point is selected, auto-fill position
+  const handleNavPointChange = (navPointId) => {
+    setTargetNavPoint(navPointId);
+    if (navPointId) {
+      const np = (navData?.points || []).find((p) => p.id === navPointId);
+      if (np) {
+        setTargetX(np.pos_x?.toString() || '');
+        setTargetY(np.pos_y?.toString() || '');
+        setTargetZ(np.pos_z?.toString() || '');
+        setTargetContact('');
+      }
+    }
+  };
+
+  // Auto-fill target position from source contact
+  const fillFromContact = () => {
+    if (targetContact) {
+      const c = contacts.find((con) => con.id === targetContact);
       if (c) {
         setTargetX(c.pos_x?.toString() || '');
         setTargetY(c.pos_y?.toString() || '');
@@ -308,7 +336,36 @@ export default function TaskForm({ missionId, onClose }) {
 
       {/* Target position */}
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Target Position (optional)</label>
+        <label className="text-xs text-gray-500 block mb-1">Target Position</label>
+
+        {/* Nav point selector */}
+        {(navData?.points || []).length > 0 && (
+          <select
+            value={targetNavPoint}
+            onChange={(e) => handleNavPointChange(e.target.value)}
+            className="w-full mb-1 bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+          >
+            <option value="">— Select Nav Point —</option>
+            {(navData?.points || [])
+              .filter((p) => p.nav_type !== 'om')
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((p) => (
+                <option key={p.id} value={p.id}>📍 {p.name} ({p.nav_type})</option>
+              ))}
+          </select>
+        )}
+
+        {/* Auto-fill from source contact */}
+        {targetContact && (
+          <button
+            type="button"
+            onClick={fillFromContact}
+            className="text-[10px] text-krt-accent hover:text-blue-400 mb-1"
+          >
+            📡 Fill position from target contact
+          </button>
+        )}
+
         <div className="grid grid-cols-3 gap-2">
           <input
             type="number"

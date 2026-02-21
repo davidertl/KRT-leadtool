@@ -11,14 +11,15 @@ import { useAuthStore } from '../stores/authStore';
 
 const MENU_ITEMS = [
   { id: 'units',       hotkey: '1' },
-  { id: 'groups',      hotkey: '2' },
-  { id: 'contacts',    hotkey: '3' },
-  { id: 'tasks',       hotkey: '4' },
-  { id: 'selected',    hotkey: '5' },
-  { id: 'ops',         hotkey: '6' },
-  { id: 'comms',       hotkey: '7' },
-  { id: 'log',         hotkey: '8' },
-  { id: 'bookmarks',   hotkey: '9' },
+  { id: 'persons',     hotkey: '2' },
+  { id: 'groups',      hotkey: '3' },
+  { id: 'contacts',    hotkey: '4' },
+  { id: 'tasks',       hotkey: '5' },
+  { id: 'selected',    hotkey: '6' },
+  { id: 'ops',         hotkey: '7' },
+  { id: 'comms',       hotkey: '8' },
+  { id: 'log',         hotkey: '9' },
+  { id: 'bookmarks',   hotkey: null },
   { id: 'multiplayer', hotkey: '0' },
 ];
 
@@ -32,8 +33,11 @@ export default function MenuBar({ onBack }) {
   const navigate = useNavigate();
 
   /** Badge counts */
+  const vehicleCount = units.filter((u) => u.unit_type !== 'person').length;
+  const personCount = units.filter((u) => u.unit_type === 'person').length;
   const counts = {
-    units: units.length,
+    units: vehicleCount,
+    persons: personCount,
     groups: groups.length,
     contacts: contacts.filter((c) => c.is_active).length,
     tasks: tasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled').length,
@@ -49,7 +53,7 @@ export default function MenuBar({ onBack }) {
   React.useEffect(() => {
     const handler = (e) => {
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        const item = MENU_ITEMS.find((m) => m.hotkey === e.key);
+        const item = MENU_ITEMS.find((m) => m.hotkey && m.hotkey === e.key);
         if (item) {
           e.preventDefault();
           togglePopup(item.id);
@@ -91,7 +95,7 @@ export default function MenuBar({ onBack }) {
                 ? 'bg-krt-accent/20 text-krt-accent border border-krt-accent/40'
                 : 'text-gray-400 hover:text-gray-200 hover:bg-krt-border/30 border border-transparent'
             }`}
-            title={`${p.label} (Alt+${item.hotkey})`}
+            title={`${p.label}${item.hotkey ? ` (Alt+${item.hotkey})` : ''}`}
           >
             <span>{p.icon}</span>
             <span className="hidden lg:inline">{p.label}</span>

@@ -6,17 +6,19 @@ import { create } from 'zustand';
  */
 
 const POPUP_DEFAULTS = {
-  units:       { x: 10,  y: 60,  w: 340, h: 520, label: 'Units',       icon: '🚀' },
-  groups:      { x: 10,  y: 60,  w: 320, h: 420, label: 'Groups',      icon: '👥' },
-  contacts:    { x: 360, y: 60,  w: 340, h: 480, label: 'IFF / Contacts', icon: '📡' },
-  tasks:       { x: 360, y: 60,  w: 360, h: 520, label: 'Tasks',       icon: '📋' },
-  selected:    { x: 10,  y: 60,  w: 340, h: 400, label: 'Selection',   icon: '✅' },
-  ops:         { x: 360, y: 60,  w: 380, h: 560, label: 'Operations',  icon: '🎯' },
-  comms:       { x: 710, y: 60,  w: 340, h: 500, label: 'Comms',       icon: '📡' },
-  log:         { x: 710, y: 60,  w: 380, h: 500, label: 'Event Log',   icon: '📜' },
-  bookmarks:   { x: 710, y: 60,  w: 320, h: 400, label: 'Bookmarks',   icon: '📌' },
-  multiplayer: { x: 710, y: 60,  w: 360, h: 520, label: 'Multiplayer', icon: '🌐' },
-  unitDetail:  { x: 200, y: 100, w: 380, h: 560, label: 'Unit Detail', icon: '🔍' },
+  units:        { x: 10,  y: 60,  w: 340, h: 520, label: 'Units',         icon: '🚀' },
+  persons:      { x: 10,  y: 60,  w: 340, h: 480, label: 'Persons',       icon: '🧑' },
+  groups:       { x: 10,  y: 60,  w: 320, h: 420, label: 'Groups',        icon: '👥' },
+  contacts:     { x: 360, y: 60,  w: 340, h: 480, label: 'IFF / Contacts', icon: '📡' },
+  tasks:        { x: 360, y: 60,  w: 360, h: 520, label: 'Tasks',         icon: '📋' },
+  selected:     { x: 10,  y: 60,  w: 340, h: 400, label: 'Selection',     icon: '✅' },
+  ops:          { x: 360, y: 60,  w: 380, h: 560, label: 'Operations',    icon: '🎯' },
+  comms:        { x: 710, y: 60,  w: 340, h: 500, label: 'Comms',         icon: '📡' },
+  log:          { x: 710, y: 60,  w: 380, h: 500, label: 'Event Log',     icon: '📜' },
+  bookmarks:    { x: 710, y: 60,  w: 320, h: 400, label: 'Bookmarks',     icon: '📌' },
+  multiplayer:  { x: 710, y: 60,  w: 360, h: 520, label: 'Multiplayer',   icon: '🌐' },
+  unitDetail:   { x: 200, y: 100, w: 380, h: 560, label: 'Unit Detail',   icon: '🔍' },
+  personDetail: { x: 200, y: 100, w: 360, h: 480, label: 'Person Detail', icon: '🧑' },
 };
 
 let nextZ = 100;
@@ -126,5 +128,16 @@ export const usePopupStore = create((set, get) => ({
   closeUnitDetail: () => {
     set({ detailUnitId: null });
     get().closePopup('unitDetail');
+  },
+
+  /** Person detail popup — special: carries a personId */
+  detailPersonId: null,
+  openPersonDetail: (personId) => {
+    set({ detailPersonId: personId });
+    get().openPopup('personDetail');
+  },
+  closePersonDetail: () => {
+    set({ detailPersonId: null });
+    get().closePopup('personDetail');
   },
 }));

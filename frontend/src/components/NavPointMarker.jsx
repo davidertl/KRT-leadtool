@@ -59,7 +59,8 @@ export function CelestialBodyMarker({ body, scale = 1 }) {
       <Html
         position={[0, displayRadius * scale + 8, 0]}
         center
-        style={{ pointerEvents: 'none' }}
+        style={{ pointerEvents: 'none', zIndex: 0 }}
+        zIndexRange={[0, 0]}
       >
         <div className="text-center whitespace-nowrap">
           <div className="text-[10px] font-bold text-white/80 drop-shadow-lg">
@@ -152,7 +153,8 @@ export function NavPointMarker({ point, scale = 1 }) {
       <Html
         position={[0, size * scale + 5, 0]}
         center
-        style={{ pointerEvents: 'none' }}
+        style={{ pointerEvents: 'none', zIndex: 0 }}
+        zIndexRange={[0, 0]}
       >
         <div className="text-center whitespace-nowrap">
           <div className="text-[9px] text-white/70 drop-shadow-lg">

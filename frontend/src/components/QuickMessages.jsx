@@ -1,16 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { useMissionStore } from '../stores/missionStore';
+import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
 
+/* Status preset messages per Class_setup.md */
 const MSG_BUTTONS = [
-  { type: 'checkin', label: '✅ Check In', color: '#22c55e' },
-  { type: 'checkout', label: '🚪 Check Out', color: '#f59e0b' },
-  { type: 'rtb', label: '🔙 RTB', color: '#3b82f6' },
-  { type: 'bingo', label: '⛽ BINGO', color: '#ef4444', desc: 'Low fuel' },
-  { type: 'winchester', label: '💨 WINCHESTER', color: '#dc2626', desc: 'No ammo' },
-  { type: 'hold', label: '✋ HOLD', color: '#f97316' },
-  { type: 'contact', label: '📡 Contact', color: '#a855f7' },
-  { type: 'status', label: '📊 Status', color: '#06b6d4' },
+  { type: 'boarding', label: '🚢 Boarding', color: '#a855f7', desc: 'Boarding a ship/vehicle' },
+  { type: 'ready_for_takeoff', label: '✅ Ready for Takeoff', color: '#22c55e', desc: 'Standby / no active task' },
+  { type: 'on_the_way', label: '🚀 On the Way', color: '#3b82f6', desc: 'Moving to destination' },
+  { type: 'arrived', label: '📍 Arrived', color: '#06b6d4', desc: 'Arrived at assigned position' },
+  { type: 'ready_for_orders', label: '🎯 Ready for Orders', color: '#10b981', desc: 'Awaiting new orders' },
+  { type: 'in_combat', label: '⚔️ In Combat', color: '#ef4444', desc: 'In combat / active operation' },
+  { type: 'heading_home', label: '🔙 Heading Home', color: '#f59e0b', desc: 'Returning to base' },
+  { type: 'disabled', label: '💔 Disabled', color: '#dc2626', desc: 'Damaged / out of action' },
 ];
 
 function timeAgo(dateStr) {
@@ -25,8 +27,9 @@ function timeAgo(dateStr) {
  */
 export default function QuickMessages({ missionId }) {
   const { messages, units, groups } = useMissionStore();
+  const user = useAuthStore((s) => s.user);
   const [selectedUnit, setSelectedUnit] = useState('');
-  const [recipientType, setRecipientType] = useState('all');
+  const [recipientType, setRecipientType] = useState('system');
   const [recipientId, setRecipientId] = useState('');
   const [customMsg, setCustomMsg] = useState('');
   const [sending, setSending] = useState(false);
@@ -52,7 +55,17 @@ export default function QuickMessages({ missionId }) {
     return { grouped, ungrouped };
   }, [units, groups]);
 
+  /** Status message types that trigger unit-status updates when sent via System */
+  const STATUS_MSG_TYPES = new Set([
+    'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived',
+    'ready_for_orders', 'in_combat', 'heading_home', 'disabled',
+  ]);
+
   const sendMessage = async (msgType, message) => {
+    // Auto-switch to "system" when sending a status preset (unless explicitly targeting unit/group)
+    const effectiveRecipient =
+      STATUS_MSG_TYPES.has(msgType) && recipientType === 'all' ? 'system' : recipientType;
+
     setSending(true);
     try {
       const res = await fetch('/api/messages', {
@@ -64,12 +77,23 @@ export default function QuickMessages({ missionId }) {
           unit_id: selectedUnit || null,
           message_type: msgType,
           message: message || null,
-          recipient_type: recipientType,
-          recipient_id: recipientType !== 'all' ? recipientId || null : null,
+          recipient_type: effectiveRecipient,
+          recipient_id: effectiveRecipient !== 'all' && effectiveRecipient !== 'system' && effectiveRecipient !== 'lead'
+            ? recipientId || null : null,
         }),
       });
       if (!res.ok) throw new Error('Failed');
-      toast.success(`${msgType.toUpperCase()} sent`);
+      const data = await res.json();
+
+      // Immediately apply unit status updates to local store
+      if (data.updated_units && data.updated_units.length > 0) {
+        const { updateUnit } = useMissionStore.getState();
+        data.updated_units.forEach((u) => updateUnit(u));
+        const names = data.updated_units.map((u) => u.callsign || u.name).join(', ');
+        toast.success(`Status → ${msgType.replace(/_/g, ' ')} (${names})`);
+      } else {
+        toast.success(`${msgType.replace(/_/g, ' ').toUpperCase()} sent`);
+      }
     } catch {
       toast.error('Failed to send message');
     } finally {
@@ -110,7 +134,7 @@ export default function QuickMessages({ missionId }) {
           onChange={(e) => setSelectedUnit(e.target.value)}
           className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
         >
-          <option value="">— General —</option>
+          <option value="">— {user?.username || 'General'} (no unit) —</option>
           {Object.entries(groupedUnits.grouped).map(([gId, g]) => (
             <optgroup key={gId} label={g.name}>
               {g.units.map((u) => (
@@ -131,18 +155,18 @@ export default function QuickMessages({ missionId }) {
       {/* Recipient selector */}
       <div>
         <label className="text-xs text-gray-500 block mb-1">Send To</label>
-        <div className="flex gap-1">
-          {['all', 'unit', 'group'].map((t) => (
+        <div className="flex gap-1 flex-wrap">
+          {['all', 'lead', 'system', 'unit', 'group'].map((t) => (
             <button
               key={t}
               onClick={() => { setRecipientType(t); setRecipientId(''); }}
-              className={`flex-1 text-xs py-1 rounded border transition-colors ${
+              className={`flex-1 min-w-[60px] text-xs py-1 rounded border transition-colors ${
                 recipientType === t
                   ? 'border-krt-accent text-krt-accent bg-krt-accent/10'
                   : 'border-krt-border text-gray-500 hover:text-gray-300'
               }`}
             >
-              {t === 'all' ? '📢 All' : t === 'unit' ? '🚀 Unit' : '👥 Group'}
+              {t === 'all' ? '📢 All' : t === 'lead' ? '⭐ Lead' : t === 'system' ? '🖥️ System' : t === 'unit' ? '🚀 Unit' : '👥 Group'}
             </button>
           ))}
         </div>
@@ -224,14 +248,27 @@ export default function QuickMessages({ missionId }) {
         </button>
       </div>
 
-      {/* Message feed */}
+      {/* System mode hint */}
+      {recipientType === 'system' && (
+        <div className="text-[10px] text-krt-accent bg-krt-accent/5 border border-krt-accent/20 rounded px-2 py-1">
+          🖥️ System mode — Status buttons will auto-update the selected unit's status.
+          {selectedUnit && (() => {
+            const u = units.find((x) => x.id === selectedUnit);
+            return u?.unit_type === 'person' && u?.parent_unit_id
+              ? ' If all crew share the same status, the ship status updates too.'
+              : null;
+          })()}
+        </div>
+      )}
+
+      {/* Message feed — system status messages are hidden (they're status updates, not chat) */}
       <div className="border-t border-krt-border pt-2">
         <label className="text-xs text-gray-500 block mb-1">Recent Messages</label>
         <div className="space-y-1 max-h-48 overflow-y-auto">
-          {messages.length === 0 && (
+          {messages.filter((m) => m.recipient_type !== 'system').length === 0 && (
             <p className="text-gray-600 text-xs text-center py-2">No messages yet</p>
           )}
-          {messages.map((msg) => {
+          {messages.filter((m) => m.recipient_type !== 'system').map((msg) => {
             const btn = MSG_BUTTONS.find((b) => b.type === msg.message_type);
             const isAlert = msg.message_type === 'under_attack';
             const recip = recipientLabel(msg);

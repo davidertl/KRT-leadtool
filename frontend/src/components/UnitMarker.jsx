@@ -3,29 +3,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { useMissionStore } from '../stores/missionStore';
 import { emitUnitMove } from '../lib/socket';
+import { STATUS_COLORS, MISSION_ICONS } from '../lib/constants';
 import * as THREE from 'three';
-
-const STATUS_COLORS = {
-  boarding: '#a855f7',
-  ready_for_takeoff: '#3b82f6',
-  on_the_way: '#06b6d4',
-  arrived: '#22c55e',
-  ready_for_orders: '#f59e0b',
-  in_combat: '#ef4444',
-  heading_home: '#f97316',
-  disabled: '#4b5563',
-};
-
-const MISSION_ICONS = {
-  SAR: '🔍',
-  POV: '🚗',
-  FIGHTER: '⚔️',
-  MINER: '⛏️',
-  TRANSPORT: '📦',
-  RECON: '👁️',
-  LOGISTICS: '🔧',
-  CUSTOM: '📌',
-};
 
 // Shared plane for raycasting during drag
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);

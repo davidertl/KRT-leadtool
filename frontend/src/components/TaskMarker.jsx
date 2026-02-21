@@ -1,14 +1,8 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
+import { PRIORITY_COLORS } from '../lib/constants';
 import * as THREE from 'three';
-
-const PRIORITY_COLORS = {
-  low: '#6b7280',
-  normal: '#3b82f6',
-  high: '#f59e0b',
-  critical: '#ef4444',
-};
 
 /**
  * 3D marker for task target locations on the map

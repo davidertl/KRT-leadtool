@@ -222,6 +222,23 @@ router.get('/route', requireAuth, async (req, res, next) => {
 });
 
 // ============================================================
+// Reset Navigation Data (delete all seeded data before reseed)
+// ============================================================
+
+/** DELETE /api/navigation/reset — wipe all navigation data */
+router.delete('/reset', requireAuth, async (req, res, next) => {
+  try {
+    // Delete in dependency order
+    await query('DELETE FROM jump_edges');
+    await query('DELETE FROM navigation_points');
+    await query('DELETE FROM celestial_bodies');
+    await query('DELETE FROM star_systems');
+    console.log('[KRT] Navigation data reset');
+    res.json({ success: true, message: 'Navigation data cleared' });
+  } catch (err) { next(err); }
+});
+
+// ============================================================
 // Reseed Navigation Data (owner trigger from UI)
 // ============================================================
 

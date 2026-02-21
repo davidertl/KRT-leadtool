@@ -1,7 +1,6 @@
 import React from 'react';
 import { useMissionStore } from '../stores/missionStore';
-
-const STATUS_OPTIONS = ['boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled'];
+import { STATUS_OPTIONS } from '../lib/constants';
 
 export default function SearchFilter() {
   const { searchQuery, statusFilter, setSearchQuery, setStatusFilter } = useMissionStore();

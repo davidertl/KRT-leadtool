@@ -1,28 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useMissionStore } from '../stores/missionStore';
 import { useVehicleData } from '../hooks/useVehicleData';
+import { STATUS_OPTIONS, STATUS_COLORS, ROE_LABELS } from '../lib/constants';
 import toast from 'react-hot-toast';
-
-const STATUS_OPTIONS = ['boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled'];
-
-const STATUS_COLORS = {
-  boarding: 'bg-purple-500',
-  ready_for_takeoff: 'bg-blue-500',
-  on_the_way: 'bg-cyan-500',
-  arrived: 'bg-green-500',
-  ready_for_orders: 'bg-yellow-500',
-  in_combat: 'bg-red-500',
-  heading_home: 'bg-orange-500',
-  disabled: 'bg-gray-700',
-};
-
-const ROE_LABELS = {
-  aggressive: { label: 'AGGRESSIVE', color: '#dc2626' },
-  fire_at_will: { label: 'FIRE AT WILL', color: '#ef4444' },
-  fire_at_id_target: { label: 'FIRE AT ID TARGET', color: '#f59e0b' },
-  self_defence: { label: 'SELF DEFENCE', color: '#22c55e' },
-  dnf: { label: 'DO NOT FIRE', color: '#9ca3af' },
-};
 
 function ResourceBar({ label, value, color, warning = 25 }) {
   const pct = Math.max(0, Math.min(100, value ?? 100));
@@ -99,6 +79,8 @@ export default function UnitDetailPanel({ unitId, onClose }) {
     );
   }
 
+  const isPerson = unit.unit_type === 'person';
+
   const { updateUnit: storeUpdateUnit, removeUnit: storeRemoveUnit } = useMissionStore();
 
   const handleStatusChange = async (newStatus) => {
@@ -127,12 +109,15 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         role: editRole || null,
         roe: editRoe || 'self_defence',
         group_id: editGroupId || null,
-        fuel: Number(editFuel),
-        ammo: Number(editAmmo),
-        hull: Number(editHull),
-        crew_count: Number(editCrewCount) || 1,
-        crew_max: editCrewMax ? Number(editCrewMax) : null,
       };
+      // Ship/vehicle-only fields
+      if (!isPerson) {
+        payload.fuel = Number(editFuel);
+        payload.ammo = Number(editAmmo);
+        payload.hull = Number(editHull);
+        payload.crew_count = Number(editCrewCount) || 1;
+        payload.crew_max = editCrewMax ? Number(editCrewMax) : null;
+      }
       const res = await fetch(`/api/units/${unit.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -216,7 +201,7 @@ export default function UnitDetailPanel({ unitId, onClose }) {
             <h3 className="font-bold text-white">{unit.name}</h3>
           )}
           <div className="text-xs text-gray-400 mt-0.5">
-            {unit.ship_type || 'Unknown ship'}
+            {isPerson ? (unit.role || 'Person') : (unit.ship_type || 'Unknown ship')}
           </div>
         </div>
         <div className="flex gap-1">
@@ -231,8 +216,8 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         </div>
       </div>
 
-      {/* Ship Image */}
-      {(imageUrl || imgLoading) && (
+      {/* Ship Image (vehicles only) */}
+      {!isPerson && (imageUrl || imgLoading) && (
         <div className="relative rounded-lg overflow-hidden bg-krt-bg">
           {imgLoading ? (
             <div className="h-24 flex items-center justify-center text-gray-500 text-xs">Loading image…</div>
@@ -257,8 +242,8 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         </div>
       )}
 
-      {/* Vehicle Specs (from Wiki API) */}
-      {vehicleData && (
+      {/* Vehicle Specs (vehicles only) */}
+      {!isPerson && vehicleData && (
         <div className="bg-krt-bg rounded-lg p-2.5">
           <label className="text-[10px] text-gray-500 block mb-1.5">Vehicle Specs</label>
           <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
@@ -323,6 +308,7 @@ export default function UnitDetailPanel({ unitId, onClose }) {
                 className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" placeholder="Role" />
             </div>
           </div>
+          {!isPerson && (
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-[10px] text-gray-600 block">Crew Count</label>
@@ -335,6 +321,7 @@ export default function UnitDetailPanel({ unitId, onClose }) {
                 className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" />
             </div>
           </div>
+          )}
           <div>
             <label className="text-[10px] text-gray-600 block">Group</label>
             <select value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)}
@@ -446,9 +433,10 @@ export default function UnitDetailPanel({ unitId, onClose }) {
               disabled={!canEditUnit}
               className={`text-xs px-2 py-1 rounded-full transition-colors ${
                 unit.status === s
-                  ? `${STATUS_COLORS[s]} text-white`
+                  ? 'text-white'
                   : 'bg-krt-bg border border-krt-border text-gray-400 hover:text-white hover:border-krt-accent'
               } ${!canEditUnit ? 'opacity-60 cursor-not-allowed' : ''}`}
+              style={unit.status === s ? { backgroundColor: STATUS_COLORS[s] } : undefined}
             >
               {s}
             </button>

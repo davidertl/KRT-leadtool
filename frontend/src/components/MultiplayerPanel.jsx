@@ -83,12 +83,28 @@ export default function MultiplayerPanel({ missionId }) {
 
 /** Reseed + refresh star map navigation data */
 function UpdateStarmapButton() {
-  const { setNavData, setActiveSystemId } = useMissionStore();
+  const { navData, setNavData, setActiveSystemId } = useMissionStore();
   const [loading, setLoading] = useState(false);
+  const hasData = (navData?.bodies?.length || 0) > 0 || (navData?.points?.length || 0) > 0;
 
   const handleUpdate = async () => {
+    if (hasData) {
+      const confirmed = confirm(
+        'This will reset the current star map and reload all navigation data from the server seed.\n\nExisting star systems, bodies, and nav points will be replaced. Continue?'
+      );
+      if (!confirmed) return;
+    }
     setLoading(true);
     try {
+      // If data exists, wipe existing nav data first then reseed
+      if (hasData) {
+        const delRes = await fetch('/api/navigation/reset', {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+        if (!delRes.ok) throw new Error('Reset failed');
+      }
+
       const res = await fetch('/api/navigation/reseed', {
         method: 'POST',
         credentials: 'include',
@@ -120,15 +136,19 @@ function UpdateStarmapButton() {
         <label className="text-xs text-gray-500 block">Star Map</label>
         <span className="text-sm font-medium text-blue-400">🗺️ Navigation Data</span>
         <p className="text-[10px] text-gray-600">
-          Reload star systems, stations &amp; nav points from seed data
+          {hasData ? 'Reset & reload star systems, stations & nav points' : 'Load star systems, stations & nav points from seed data'}
         </p>
       </div>
       <button
         onClick={handleUpdate}
         disabled={loading}
-        className="text-xs px-3 py-1 rounded border border-blue-500/40 text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50"
+        className={`text-xs px-3 py-1 rounded border transition-colors disabled:opacity-50 ${
+          hasData
+            ? 'border-orange-500/40 text-orange-400 hover:bg-orange-500/10'
+            : 'border-blue-500/40 text-blue-400 hover:bg-blue-500/10'
+        }`}
       >
-        {loading ? 'Updating…' : 'Update Starmap'}
+        {loading ? 'Updating…' : hasData ? 'Reset Starmap' : 'Load Starmap'}
       </button>
     </div>
   );

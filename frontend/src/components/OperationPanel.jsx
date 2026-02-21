@@ -37,11 +37,19 @@ function formatTimer(seconds) {
 export default function OperationPanel({ missionId }) {
   const { operations } = useMissionStore();
   const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  const [draftPhases, setDraftPhases] = useState([]);
+  const [draftPhases, setDraftPhases] = useState([
+    { name: 'Briefing', phase_type: 'custom', sort_order: 0 },
+    { name: 'Phase 1', phase_type: 'custom', sort_order: 1 },
+    { name: 'Phase 2', phase_type: 'custom', sort_order: 2 },
+    { name: 'Extraction', phase_type: 'custom', sort_order: 3 },
+    { name: 'Debrief', phase_type: 'custom', sort_order: 4 },
+  ]);
   const [draftPhaseName, setDraftPhaseName] = useState('');
   const activeOp = operations.find((o) => o.phase !== 'complete');
+  const [viewPastId, setViewPastId] = useState(null);
 
   const addDraftPhase = () => {
     if (!draftPhaseName.trim()) return;
@@ -51,7 +59,9 @@ export default function OperationPanel({ missionId }) {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!newName.trim() || creating) return;
+    setCreating(true);
+    setShowCreate(false); // Close form immediately to prevent double-click
     try {
       const res = await fetch('/api/operations', {
         method: 'POST',
@@ -73,12 +83,20 @@ export default function OperationPanel({ missionId }) {
       }
 
       toast.success('Operation created');
-      setShowCreate(false);
       setNewName('');
       setNewDesc('');
-      setDraftPhases([]);
+      setDraftPhases([
+        { name: 'Briefing', phase_type: 'custom', sort_order: 0 },
+        { name: 'Phase 1', phase_type: 'custom', sort_order: 1 },
+        { name: 'Phase 2', phase_type: 'custom', sort_order: 2 },
+        { name: 'Extraction', phase_type: 'custom', sort_order: 3 },
+        { name: 'Debrief', phase_type: 'custom', sort_order: 4 },
+      ]);
     } catch {
       toast.error('Failed to create operation');
+      setShowCreate(true); // Reopen form on error so user can retry
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -143,28 +161,155 @@ export default function OperationPanel({ missionId }) {
           </div>
 
           <div className="flex gap-2">
-            <button type="submit" className="bg-krt-accent text-white text-sm px-3 py-1 rounded">Create</button>
-            <button type="button" onClick={() => { setShowCreate(false); setDraftPhases([]); }} className="text-gray-400 text-sm px-3 py-1">Cancel</button>
+            <button type="submit" disabled={creating || !newName.trim()} className="bg-krt-accent text-white text-sm px-3 py-1 rounded disabled:opacity-50">
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+            <button type="button" onClick={() => { setShowCreate(false); }} className="text-gray-400 text-sm px-3 py-1">Cancel</button>
           </div>
         </form>
       )}
 
       {activeOp && <ActiveOperation op={activeOp} missionId={missionId} />}
 
-      {/* Past operations */}
+      {/* Past operations — debrief access */}
       {operations.filter((o) => o.phase === 'complete').length > 0 && (
         <div className="pt-2 border-t border-krt-border">
-          <p className="text-xs text-gray-600 mb-1">
-            Past ({operations.filter((o) => o.phase === 'complete').length})
+          <p className="text-xs text-gray-500 font-bold mb-1">
+            📋 Past Operations ({operations.filter((o) => o.phase === 'complete').length})
           </p>
           {operations.filter((o) => o.phase === 'complete').map((op) => (
-            <div key={op.id} className="p-2 rounded bg-krt-bg/30 text-xs text-gray-500 mb-1">
-              <span className="text-gray-300">{op.name}</span>
-              {op.ended_at && <span className="ml-2">{new Date(op.ended_at).toLocaleDateString()}</span>}
+            <div key={op.id} className="mb-2">
+              <div
+                className="p-2 rounded bg-krt-bg/50 border border-krt-border cursor-pointer hover:border-krt-accent/40 transition-colors"
+                onClick={() => setViewPastId(viewPastId === op.id ? null : op.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-300 font-medium">{op.name}</span>
+                  <div className="flex items-center gap-2">
+                    {op.ended_at && <span className="text-[10px] text-gray-600">{new Date(op.ended_at).toLocaleDateString()}</span>}
+                    <span className="text-xs text-gray-500">{viewPastId === op.id ? '▲' : '▼'}</span>
+                  </div>
+                </div>
+                {op.description && <p className="text-[10px] text-gray-500 mt-0.5">{op.description}</p>}
+              </div>
+              {viewPastId === op.id && <PastOperationDebrief op={op} missionId={missionId} />}
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Past Operation Debrief View ──────────────────────── */
+function PastOperationDebrief({ op, missionId }) {
+  const [phases, setPhases] = useState([]);
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newNote, setNewNote] = useState('');
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [ph, n] = await Promise.all([
+          fetch(`/api/operation-phases?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()).catch(() => []),
+          fetch(`/api/operation-notes?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()).catch(() => []),
+        ]);
+        setPhases(Array.isArray(ph) ? ph.sort((a, b) => a.sort_order - b.sort_order) : []);
+        setNotes(Array.isArray(n) ? n : []);
+      } catch { /* ignore */ }
+      setLoading(false);
+    };
+    load();
+  }, [op.id]);
+
+  const addNote = async () => {
+    if (!newNote.trim()) return;
+    try {
+      const res = await fetch('/api/operation-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ operation_id: op.id, content: newNote.trim() }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const created = await res.json();
+      setNotes((prev) => [...prev, created]);
+      setNewNote('');
+      toast.success('Note added');
+    } catch { toast.error('Failed to add note'); }
+  };
+
+  if (loading) return <p className="text-xs text-gray-500 p-2">Loading debrief…</p>;
+
+  return (
+    <div className="mt-1 p-3 rounded bg-krt-bg/30 border border-krt-border space-y-3">
+      {/* Timeline */}
+      <div>
+        <label className="text-xs text-gray-500 block mb-1">Timeline</label>
+        <div className="text-[10px] text-gray-400 space-y-0.5">
+          {op.started_at && <div>▶ Started: {new Date(op.started_at).toLocaleString()}</div>}
+          {op.ended_at && <div>⏹ Ended: {new Date(op.ended_at).toLocaleString()}</div>}
+          {op.started_at && op.ended_at && (
+            <div>⏱ Duration: {Math.round((new Date(op.ended_at) - new Date(op.started_at)) / 60000)} min</div>
+          )}
+        </div>
+      </div>
+
+      {/* Phases */}
+      {phases.length > 0 && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Phases</label>
+          <div className="space-y-1">
+            {phases.map((ph, i) => (
+              <div key={ph.id} className="text-xs flex items-center gap-2 text-gray-400">
+                <span className="text-gray-600 w-4">{i + 1}.</span>
+                <span className="text-gray-300">{ph.name}</span>
+                {ph.actual_start && (
+                  <span className="text-[10px] text-yellow-500">
+                    {new Date(ph.actual_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+                {ph.actual_end && (
+                  <span className="text-[10px] text-green-500">
+                    → {new Date(ph.actual_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Notes */}
+      <div>
+        <label className="text-xs text-gray-500 block mb-1">Debrief Notes ({notes.length})</label>
+        <div className="space-y-1 max-h-40 overflow-y-auto">
+          {notes.length === 0 && <p className="text-[10px] text-gray-600">No notes</p>}
+          {notes.map((n) => (
+            <div key={n.id} className="p-1.5 rounded bg-krt-bg/50 text-xs">
+              <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                <span>{n.created_by_name || 'Unknown'}</span>
+                <span className="ml-auto">{new Date(n.created_at).toLocaleString()}</span>
+              </div>
+              <p className="text-gray-400 whitespace-pre-wrap">{n.content}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Add post-mission note */}
+        <div className="flex gap-1 mt-1">
+          <input
+            type="text"
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+            placeholder="Add debrief note…"
+            className="flex-1 bg-krt-bg border border-krt-border rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent"
+            onKeyDown={(e) => { if (e.key === 'Enter') addNote(); }}
+          />
+          <button onClick={addNote} disabled={!newNote.trim()} className="text-krt-accent text-xs px-2 disabled:opacity-50">Add</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -183,13 +328,13 @@ function ActiveOperation({ op, missionId }) {
     const load = async () => {
       try {
         const [ph, roe, notes] = await Promise.all([
-          fetch(`/api/operation-phases?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()),
-          fetch(`/api/operation-roe?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()),
-          fetch(`/api/operation-notes?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()),
+          fetch(`/api/operation-phases?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()).catch(() => []),
+          fetch(`/api/operation-roe?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()).catch(() => []),
+          fetch(`/api/operation-notes?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()).catch(() => []),
         ]);
-        setOperationPhases(ph);
-        setOperationRoe(roe);
-        setOperationNotes(notes);
+        setOperationPhases(Array.isArray(ph) ? ph : []);
+        setOperationRoe(Array.isArray(roe) ? roe : []);
+        setOperationNotes(Array.isArray(notes) ? notes : []);
       } catch { /* ignore */ }
     };
     load();
@@ -485,7 +630,8 @@ function PhasesTab({ opId, phases }) {
 }
 
 /* ─── Per-Entity ROE Tab ───────────────────────────────── */
-function EntityRoeTab({ opId, roe, units, groups, globalRoe }) {
+function EntityRoeTab({ opId, roe: roeRaw, units, groups, globalRoe }) {
+  const roe = Array.isArray(roeRaw) ? roeRaw : [];
   const setEntityRoe = async (targetType, targetId, roeValue) => {
     try {
       const res = await fetch('/api/operation-roe', {

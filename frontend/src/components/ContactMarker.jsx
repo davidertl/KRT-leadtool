@@ -1,14 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
+import { IFF_COLORS } from '../lib/constants';
 import * as THREE from 'three';
-
-const IFF_COLORS = {
-  friendly: '#22c55e',
-  hostile: '#ef4444',
-  neutral: '#f59e0b',
-  unknown: '#a855f7',
-};
 
 const IFF_SHAPES = {
   friendly: 'circle',   // sphere

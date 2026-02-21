@@ -4,6 +4,7 @@ import { usePopupStore } from '../stores/popupStore';
 import PopupWindow from './PopupWindow';
 import SearchFilter from './SearchFilter';
 import UnitDetailPanel from './UnitDetailPanel';
+import PersonDetailPanel from './PersonDetailPanel';
 import SpotrepForm from './SpotrepForm';
 import TaskForm from './TaskForm';
 import OperationPanel from './OperationPanel';
@@ -12,6 +13,7 @@ import QuickMessages from './QuickMessages';
 import BookmarkPanel from './BookmarkPanel';
 import MultiplayerPanel from './MultiplayerPanel';
 import toast from 'react-hot-toast';
+import { CLASS_TYPES, STATUS_OPTIONS, STATUS_COLORS, IFF_COLORS, PRIORITY_COLORS, PRIORITY_BADGE_COLORS, TASK_STATUS_OPTIONS } from '../lib/constants';
 
 /**
  * All popup windows for the map view.
@@ -23,6 +25,7 @@ export default function PopupPanels() {
   return (
     <>
       <UnitsPopup missionId={missionId} />
+      <PersonsPopup missionId={missionId} />
       <GroupsPopup missionId={missionId} />
       <ContactsPopup missionId={missionId} />
       <TasksPopup missionId={missionId} />
@@ -33,57 +36,19 @@ export default function PopupPanels() {
       <BookmarksPopup missionId={missionId} />
       <MultiplayerPopup missionId={missionId} />
       <UnitDetailPopup />
+      <PersonDetailPopup />
     </>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Shared constants & sub-components (from Sidebar)
+   Shared sub-components
    ═══════════════════════════════════════════════════════════ */
-
-const CLASS_TYPES = [
-  { value: 'SAR', label: '🔍 Search & Rescue', color: '#f59e0b' },
-  { value: 'POV', label: '🚗 POV', color: '#64748b' },
-  { value: 'FIGHTER', label: '⚔️ Fighter', color: '#ef4444' },
-  { value: 'MINER', label: '⛏️ Mining', color: '#a855f7' },
-  { value: 'TRANSPORT', label: '📦 Transport', color: '#22c55e' },
-  { value: 'RECON', label: '👁️ Recon', color: '#06b6d4' },
-  { value: 'LOGISTICS', label: '🔧 Logistics', color: '#f97316' },
-  { value: 'CUSTOM', label: '📌 Custom', color: '#6b7280' },
-];
-
-const STATUS_OPTIONS = ['boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled'];
-
-const IFF_COLORS = {
-  friendly: { bg: 'bg-green-500/20', border: 'border-green-500/30', text: 'text-green-400', dot: 'bg-green-500' },
-  hostile: { bg: 'bg-red-500/20', border: 'border-red-500/30', text: 'text-red-400', dot: 'bg-red-500' },
-  neutral: { bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', text: 'text-yellow-400', dot: 'bg-yellow-500' },
-  unknown: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400', dot: 'bg-purple-500' },
-};
-
-const PRIORITY_COLORS_MAP = {
-  low: { bg: 'bg-gray-500/10', border: 'border-gray-500/20', badge: 'bg-gray-600' },
-  normal: { bg: 'bg-blue-500/10', border: 'border-blue-500/20', badge: 'bg-blue-600' },
-  high: { bg: 'bg-yellow-500/10', border: 'border-yellow-500/20', badge: 'bg-yellow-600' },
-  critical: { bg: 'bg-red-500/10', border: 'border-red-500/20', badge: 'bg-red-600' },
-};
-
-const TASK_STATUS_OPTIONS = ['pending', 'assigned', 'in_progress', 'completed', 'cancelled'];
 
 /* ─── StatusBadge ──────────────────── */
 function StatusBadge({ status }) {
-  const colors = {
-    boarding: 'bg-purple-500',
-    ready_for_takeoff: 'bg-blue-500',
-    on_the_way: 'bg-cyan-500',
-    arrived: 'bg-green-500',
-    ready_for_orders: 'bg-yellow-500',
-    in_combat: 'bg-red-500',
-    heading_home: 'bg-orange-500',
-    disabled: 'bg-gray-700',
-  };
   return (
-    <span className={`px-2 py-0.5 rounded-full text-xs ${colors[status] || 'bg-gray-500'}`}>
+    <span className="px-2 py-0.5 rounded-full text-xs text-white" style={{ backgroundColor: STATUS_COLORS[status] || '#6b7280' }}>
       {status}
     </span>
   );
@@ -92,12 +57,20 @@ function StatusBadge({ status }) {
 /* ─── UnitListItem ─────────────────── */
 function UnitListItem({ unit, group, isSelected }) {
   const { toggleSelectUnit, focusUnit } = useMissionStore();
-  const { openUnitDetail } = usePopupStore();
+  const { openUnitDetail, openPersonDetail } = usePopupStore();
+
+  const handleDoubleClick = () => {
+    if (unit.unit_type === 'person') {
+      openPersonDetail(unit.id);
+    } else {
+      openUnitDetail(unit.id);
+    }
+  };
 
   return (
     <div
       onClick={() => toggleSelectUnit(unit.id)}
-      onDoubleClick={() => openUnitDetail(unit.id)}
+      onDoubleClick={handleDoubleClick}
       className={`p-3 rounded-lg cursor-pointer transition-colors ${
         isSelected
           ? 'bg-krt-accent/10 border border-krt-accent/30'
@@ -128,12 +101,27 @@ function UnitListItem({ unit, group, isSelected }) {
 
 /* ─── GroupListItem ────────────────── */
 function GroupListItem({ group, unitCount, canEdit }) {
+  const { units } = useMissionStore();
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group.name);
   const [editClassType, setEditClassType] = useState(group.class_type);
+  const [editVhf, setEditVhf] = useState(group.vhf_channel || '');
+  const [editRoe, setEditRoe] = useState(group.roe || 'self_defence');
   const [saving, setSaving] = useState(false);
 
+  // Units available for assignment
+  const groupUnits = units.filter((u) => u.group_id === group.id);
+  const unassignedUnits = units.filter((u) => !u.group_id);
+
   const classType = CLASS_TYPES.find((m) => m.value === group.class_type);
+
+  const ROE_OPTS = [
+    { value: 'aggressive', label: 'AGGRESSIVE' },
+    { value: 'fire_at_will', label: 'FIRE AT WILL' },
+    { value: 'fire_at_id_target', label: 'FIRE AT ID TARGET' },
+    { value: 'self_defence', label: 'SELF DEFENCE' },
+    { value: 'dnf', label: 'DO NOT FIRE' },
+  ];
 
   const handleSave = async () => {
     if (!editName.trim()) return;
@@ -144,7 +132,13 @@ function GroupListItem({ group, unitCount, canEdit }) {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name: editName.trim(), class_type: editClassType, color: mType?.color || group.color }),
+        body: JSON.stringify({
+          name: editName.trim(),
+          class_type: editClassType,
+          color: mType?.color || group.color,
+          vhf_channel: editVhf ? parseInt(editVhf, 10) : null,
+          roe: editRoe,
+        }),
       });
       if (res.ok) { toast.success('Group updated'); setEditing(false); }
       else toast.error('Failed to update group');
@@ -161,6 +155,32 @@ function GroupListItem({ group, unitCount, canEdit }) {
     } catch { toast.error('Network error'); }
   };
 
+  const assignUnit = async (unitId) => {
+    try {
+      const res = await fetch(`/api/units/${unitId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ group_id: group.id }),
+      });
+      if (res.ok) toast.success('Unit assigned');
+      else toast.error('Failed to assign unit');
+    } catch { toast.error('Network error'); }
+  };
+
+  const removeUnit = async (unitId) => {
+    try {
+      const res = await fetch(`/api/units/${unitId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ group_id: null }),
+      });
+      if (res.ok) toast.success('Unit removed from group');
+      else toast.error('Failed');
+    } catch { toast.error('Network error'); }
+  };
+
   if (editing) {
     return (
       <div className="p-3 rounded-lg bg-krt-bg/80 border border-krt-accent/40 space-y-2">
@@ -170,6 +190,54 @@ function GroupListItem({ group, unitCount, canEdit }) {
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
           {CLASS_TYPES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
         </select>
+
+        {/* VHF Channel */}
+        <div>
+          <label className="text-xs text-gray-500 block mb-0.5">VHF Channel</label>
+          <input
+            type="number"
+            min="1" max="99999"
+            value={editVhf}
+            onChange={(e) => setEditVhf(e.target.value)}
+            placeholder="00001–99999"
+            className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent"
+          />
+        </div>
+
+        {/* ROE */}
+        <div>
+          <label className="text-xs text-gray-500 block mb-0.5">Rules of Engagement</label>
+          <select value={editRoe} onChange={(e) => setEditRoe(e.target.value)}
+            className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
+            {ROE_OPTS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </div>
+
+        {/* Assigned units */}
+        <div>
+          <label className="text-xs text-gray-500 block mb-0.5">Assigned Units ({groupUnits.length})</label>
+          <div className="space-y-0.5 max-h-24 overflow-y-auto">
+            {groupUnits.map((u) => (
+              <div key={u.id} className="flex items-center justify-between text-xs text-gray-300 bg-krt-bg/60 rounded px-2 py-0.5">
+                <span>{u.callsign ? `[${u.callsign}] ` : ''}{u.name}</span>
+                <button onClick={() => removeUnit(u.id)} className="text-red-500 text-[10px] hover:text-red-400">✕</button>
+              </div>
+            ))}
+          </div>
+          {unassignedUnits.length > 0 && (
+            <select
+              defaultValue=""
+              onChange={(e) => { if (e.target.value) assignUnit(e.target.value); e.target.value = ''; }}
+              className="w-full mt-1 bg-krt-panel border border-krt-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-krt-accent"
+            >
+              <option value="">+ Assign unit…</option>
+              {unassignedUnits.map((u) => (
+                <option key={u.id} value={u.id}>{u.callsign ? `[${u.callsign}] ` : ''}{u.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
         <div className="flex gap-2">
           <button onClick={handleSave} disabled={saving} className="bg-krt-accent text-white text-sm px-3 py-1 rounded disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
           <button onClick={() => setEditing(false)} className="text-gray-400 text-sm px-3 py-1">Cancel</button>
@@ -211,14 +279,14 @@ function ContactListItem({ contact, inactive }) {
     } catch { toast.error('Failed to delete contact'); }
   };
 
-  const colors = IFF_COLORS[contact.iff] || IFF_COLORS.unknown;
+  const iffColor = IFF_COLORS[contact.iff] || IFF_COLORS.unknown;
 
   return (
-    <div className={`p-3 rounded-lg border ${inactive ? 'opacity-50' : ''} ${colors.bg} ${colors.border}`}>
+    <div className={`p-3 rounded-lg border ${inactive ? 'opacity-50' : ''}`} style={{ backgroundColor: iffColor + '33', borderColor: iffColor + '4D' }}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${colors.dot}`} />
-          <span className={`text-xs font-bold uppercase ${colors.text}`}>{contact.iff}</span>
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: iffColor }} />
+          <span className="text-xs font-bold uppercase" style={{ color: iffColor }}>{contact.iff}</span>
           {contact.threat !== 'none' && <span className="text-xs text-red-400">⚠{contact.threat}</span>}
           {contact.confidence && contact.confidence !== 'confirmed' && (
             <span className="text-[10px] text-gray-500 bg-krt-bg px-1 rounded">{contact.confidence}</span>
@@ -250,13 +318,14 @@ function TaskListItem({ task, completed }) {
     } catch { toast.error('Failed to update task'); }
   };
 
-  const colors = PRIORITY_COLORS_MAP[task.priority] || PRIORITY_COLORS_MAP.normal;
+  const priorityColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal;
+  const badgeColor = PRIORITY_BADGE_COLORS[task.priority] || PRIORITY_BADGE_COLORS.normal;
 
   return (
-    <div className={`p-3 rounded-lg border ${completed ? 'opacity-50' : ''} ${colors.bg} ${colors.border}`}>
+    <div className={`p-3 rounded-lg border ${completed ? 'opacity-50' : ''}`} style={{ backgroundColor: priorityColor + '1A', borderColor: priorityColor + '33' }}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1">
-          <span className={`text-xs px-1.5 py-0.5 rounded ${colors.badge} text-white`}>{task.priority}</span>
+          <span className="text-xs px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: badgeColor }}>{task.priority}</span>
           {task.task_type && task.task_type !== 'custom' && (
             <span className="text-[10px] text-gray-400 bg-krt-bg px-1 rounded">{task.task_type}</span>
           )}
@@ -314,7 +383,6 @@ const SPAWNABLE_NAV_TYPES = ['station', 'rest_stop', 'outpost'];
 const UNIT_TYPES = [
   { value: 'ship', label: '🚀 Ship' },
   { value: 'ground_vehicle', label: '🚗 Ground Vehicle' },
-  { value: 'person', label: '🧑 Person' },
 ];
 
 function CreateUnitForm({ missionId, groups, onClose }) {
@@ -562,7 +630,10 @@ function UnitsPopup({ missionId }) {
   const [showCreate, setShowCreate] = useState(false);
   const canCreateUnits = myMissionRole === 'gesamtlead' || myMissionRole === 'gruppenlead';
 
-  const filtered = units.filter((u) => {
+  // Only show ships and ground vehicles — persons have their own panel
+  const vehicleUnits = units.filter((u) => u.unit_type !== 'person');
+
+  const filtered = vehicleUnits.filter((u) => {
     if (statusFilter && u.status !== statusFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -735,6 +806,171 @@ function MultiplayerPopup({ missionId }) {
   );
 }
 
+/* ─── PersonListItem ───────────────── */
+function PersonListItem({ person, group, isSelected }) {
+  const { toggleSelectUnit, focusUnit } = useMissionStore();
+  const { openPersonDetail } = usePopupStore();
+  const parentShip = person.parent_unit_id ? useMissionStore.getState().units.find((u) => u.id === person.parent_unit_id) : null;
+
+  return (
+    <div
+      onClick={() => toggleSelectUnit(person.id)}
+      onDoubleClick={() => openPersonDetail(person.id)}
+      className={`p-3 rounded-lg cursor-pointer transition-colors ${
+        isSelected
+          ? 'bg-krt-accent/10 border border-krt-accent/30'
+          : 'bg-krt-bg/50 border border-transparent hover:border-krt-border'
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium truncate">
+          <span className="mr-1">🧑</span>
+          {person.callsign ? `[${person.callsign}] ` : ''}{person.name}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); focusUnit(person.id); }}
+            className="text-gray-500 hover:text-krt-accent text-xs"
+            title="Focus on map"
+          >🎯</button>
+          <StatusBadge status={person.status} />
+        </div>
+      </div>
+      <div className="text-xs text-gray-500 mt-1">
+        {person.role || 'No role'}
+        {parentShip && <span className="ml-1">• Aboard {parentShip.callsign ? `[${parentShip.callsign}]` : parentShip.name}</span>}
+        {group && <span className="ml-1">• {group.name}</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ─── CreatePersonForm ─────────────── */
+function CreatePersonForm({ missionId, groups, onClose }) {
+  const { units, navData } = useMissionStore();
+  const [name, setName] = useState('');
+  const [callsign, setCallsign] = useState('');
+  const [role, setRole] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [parentUnitId, setParentUnitId] = useState('');
+  const [stationId, setStationId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const MAP_SCALE = 1e6;
+  const SPAWNABLE_NAV_TYPES = ['station', 'rest_stop', 'outpost'];
+  const availableShips = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === missionId);
+  const spawnLocations = (navData?.points || [])
+    .filter((p) => SPAWNABLE_NAV_TYPES.includes(p.nav_type) && p.active !== false)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    let spawnX = 0, spawnY = 0, spawnZ = 0;
+    if (parentUnitId) {
+      const p = units.find((u) => u.id === parentUnitId);
+      if (p) { spawnX = p.pos_x || 0; spawnY = p.pos_y || 0; spawnZ = p.pos_z || 0; }
+    } else if (stationId) {
+      const station = spawnLocations.find((p) => p.id === stationId);
+      spawnX = station ? (station.pos_x || 0) / MAP_SCALE : 0;
+      spawnY = station ? (station.pos_y || 0) / MAP_SCALE : 0;
+      spawnZ = station ? (station.pos_z || 0) / MAP_SCALE : 0;
+    } else {
+      setError('Please select a location or a ship to board'); return;
+    }
+    setSubmitting(true); setError(null);
+    try {
+      const res = await fetch('/api/units', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({
+          name: name.trim(), callsign: callsign || null,
+          unit_type: 'person', mission_id: missionId, group_id: groupId || null,
+          parent_unit_id: parentUnitId || null, role: role || null,
+          pos_x: spawnX, pos_y: spawnY, pos_z: spawnZ,
+        }),
+      });
+      if (res.ok) { toast.success('Person created'); onClose(); }
+      else {
+        const data = await res.json().catch(() => null);
+        const msg = data?.details?.map((d) => d.message).join(', ') || data?.error || `Error ${res.status}`;
+        setError(msg); toast.error(`Failed: ${msg}`);
+      }
+    } catch { setError('Network error'); toast.error('Network error'); }
+    finally { setSubmitting(false); }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-krt-bg/80 rounded-lg p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Person name *"
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent" autoFocus />
+        <input type="text" value={callsign} onChange={(e) => setCallsign(e.target.value)} placeholder="Callsign"
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent" />
+      </div>
+      <input type="text" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Role (e.g. Pilot, Engineer)"
+        className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent" />
+      <select value={parentUnitId} onChange={(e) => { setParentUnitId(e.target.value); if (e.target.value) setStationId(''); }}
+        className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
+        <option value="">Board a ship (optional)</option>
+        {availableShips.map((s) => <option key={s.id} value={s.id}>{s.callsign ? `[${s.callsign}] ` : ''}{s.name}</option>)}
+      </select>
+      {!parentUnitId && (
+        <select value={stationId} onChange={(e) => setStationId(e.target.value)}
+          className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
+          <option value="">Starting location *</option>
+          {spawnLocations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name} ({loc.nav_type.replace('_', ' ')})</option>)}
+        </select>
+      )}
+      <select value={groupId} onChange={(e) => setGroupId(e.target.value)}
+        className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
+        <option value="">No group</option>
+        {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+      </select>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={submitting} className="bg-krt-accent text-white text-sm px-3 py-1 rounded disabled:opacity-50">{submitting ? 'Creating…' : 'Create Person'}</button>
+        <button type="button" onClick={onClose} className="text-gray-400 text-sm px-3 py-1">Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/* ─── PersonsPopup ─────────────────── */
+function PersonsPopup({ missionId }) {
+  const { units, groups, selectedUnitIds, searchQuery, myMissionRole } = useMissionStore();
+  const [showCreate, setShowCreate] = useState(false);
+  const canCreate = myMissionRole === 'gesamtlead' || myMissionRole === 'gruppenlead';
+
+  const persons = units.filter((u) => u.unit_type === 'person');
+  const filtered = persons.filter((p) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const group = groups.find((g) => g.id === p.group_id);
+      return p.name.toLowerCase().includes(q) || (p.role && p.role.toLowerCase().includes(q)) || (group && group.name.toLowerCase().includes(q));
+    }
+    return true;
+  });
+
+  return (
+    <PopupWindow id="persons">
+      <div className="space-y-2">
+        {canCreate && (
+          <button onClick={() => setShowCreate(!showCreate)} className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1">+ Add Person</button>
+        )}
+        {showCreate && <CreatePersonForm missionId={missionId} groups={groups} onClose={() => setShowCreate(false)} />}
+        {filtered.length === 0 && !showCreate && (
+          <p className="text-gray-500 text-sm text-center py-4">No persons. Add crew members here.</p>
+        )}
+        {filtered.map((person) => {
+          const group = groups.find((g) => g.id === person.group_id);
+          return <PersonListItem key={person.id} person={person} group={group} isSelected={selectedUnitIds.includes(person.id)} />;
+        })}
+      </div>
+    </PopupWindow>
+  );
+}
+
 function UnitDetailPopup() {
   const detailUnitId = usePopupStore((s) => s.detailUnitId);
   const closeUnitDetail = usePopupStore((s) => s.closeUnitDetail);
@@ -745,6 +981,21 @@ function UnitDetailPopup() {
         <UnitDetailPanel unitId={detailUnitId} onClose={closeUnitDetail} />
       ) : (
         <p className="text-gray-500 text-sm text-center py-4">No unit selected</p>
+      )}
+    </PopupWindow>
+  );
+}
+
+function PersonDetailPopup() {
+  const detailPersonId = usePopupStore((s) => s.detailPersonId);
+  const closePersonDetail = usePopupStore((s) => s.closePersonDetail);
+
+  return (
+    <PopupWindow id="personDetail">
+      {detailPersonId ? (
+        <PersonDetailPanel unitId={detailPersonId} onClose={closePersonDetail} />
+      ) : (
+        <p className="text-gray-500 text-sm text-center py-4">No person selected</p>
       )}
     </PopupWindow>
   );
