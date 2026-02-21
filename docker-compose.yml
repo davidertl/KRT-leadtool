@@ -17,6 +17,7 @@ services:
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN}
+      - NGINX_ENVSUBST_TEMPLATE_DIR=/dev/null
     volumes:
       - ./nginx/docker-entrypoint.sh:/custom-entrypoint.sh:ro
       - ./nginx/default-http.conf:/etc/nginx/krt-templates/http-only.conf:ro
