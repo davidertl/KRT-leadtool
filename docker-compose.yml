@@ -159,10 +159,11 @@ services:
     networks:
       - krt-internal
     healthcheck:
-      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
+      start_period: 10s
     logging:
       driver: json-file
       options:
