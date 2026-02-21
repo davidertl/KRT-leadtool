@@ -421,10 +421,16 @@ CREATE INDEX idx_tasks_assigned_group ON tasks(assigned_group);
 CREATE TABLE ship_images (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     ship_type       VARCHAR(128) UNIQUE NOT NULL,     -- matches units.ship_type
+    display_name    VARCHAR(128),                      -- official name from Wiki API
     image_url       TEXT NOT NULL,                     -- cached/proxied image URL
     thumbnail_url   TEXT,
     vehicle_category VARCHAR(32) DEFAULT 'ship',      -- 'ship', 'ground_vehicle', 'gravlev'
     manufacturer    VARCHAR(128),                      -- e.g. 'Aegis Dynamics'
+    crew_max        INTEGER,                           -- maximum crew capacity
+    fuel_capacity   NUMERIC,                           -- hydrogen fuel capacity
+    cargo_capacity  NUMERIC,                           -- cargo capacity in SCU
+    hull_hp         NUMERIC,                           -- total hull hit points
+    size_class      NUMERIC,                       -- 'small', 'medium', 'large', 'capital'
     source          VARCHAR(64) DEFAULT 'manual',     -- 'manual', 'sc_wiki', etc.
     source_url      TEXT,                              -- original source URL for attribution
     license         VARCHAR(128) DEFAULT 'CC-BY-NC-SA 4.0',

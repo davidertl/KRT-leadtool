@@ -18,6 +18,20 @@ function deriveCategory(vehicle) {
   return 'ship'; // default — is_spaceship or unclassified
 }
 
+/** Extract vehicle stats from Wiki API response */
+function extractVehicleStats(vehicle) {
+  return {
+    displayName: vehicle.name || null,
+    crewMax: vehicle.crew?.max ?? null,
+    fuelCapacity: vehicle.fuel?.capacity ?? null,
+    cargoCapacity: vehicle.cargo_capacity ?? null,
+    hullHp: vehicle.health ?? null,
+    sizeCategory: vehicle.size?.en_EN || null,
+    category: deriveCategory(vehicle),
+    manufacturer: vehicle.manufacturer?.name || null,
+  };
+}
+
 /**
  * GET /api/ship-images/names?category=ship|ground_vehicle|gravlev
  * Lightweight list of vehicle names + manufacturer, cached in Valkey.
@@ -31,7 +45,7 @@ router.get('/names', requireAuth, async (req, res, next) => {
     const cached = await valkey.get(cacheKey).catch(() => null);
     if (cached) return res.json(JSON.parse(cached));
 
-    let sql = `SELECT ship_type, manufacturer, vehicle_category FROM ship_images`;
+    let sql = `SELECT ship_type, display_name, manufacturer, vehicle_category, crew_max, cargo_capacity, size_category FROM ship_images`;
     const params = [];
     if (category) {
       sql += ` WHERE vehicle_category = $1`;
@@ -104,20 +118,40 @@ router.get('/lookup/:shipType', requireAuth, async (req, res, next) => {
         return res.status(404).json({ error: 'No image available for this ship' });
       }
 
+      const stats = extractVehicleStats(vehicle);
+
       // Cache in database
       const result = await query(
-        `INSERT INTO ship_images (ship_type, image_url, thumbnail_url, source, source_url, license, license_url, author)
-         VALUES ($1, $2, $3, 'sc_wiki', $4, 'CC-BY-NC-SA 4.0', 'https://creativecommons.org/licenses/by-nc-sa/4.0/', $5)
+        `INSERT INTO ship_images (ship_type, display_name, image_url, thumbnail_url, vehicle_category, manufacturer,
+           crew_max, fuel_capacity, cargo_capacity, hull_hp, size_category,
+           source, source_url, license, license_url, author)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'sc_wiki', $12, 'CC-BY-NC-SA 4.0', 'https://creativecommons.org/licenses/by-nc-sa/4.0/', $13)
          ON CONFLICT (ship_type) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
            image_url = EXCLUDED.image_url,
            thumbnail_url = EXCLUDED.thumbnail_url,
+           vehicle_category = EXCLUDED.vehicle_category,
+           manufacturer = EXCLUDED.manufacturer,
+           crew_max = EXCLUDED.crew_max,
+           fuel_capacity = EXCLUDED.fuel_capacity,
+           cargo_capacity = EXCLUDED.cargo_capacity,
+           hull_hp = EXCLUDED.hull_hp,
+           size_category = EXCLUDED.size_category,
            source_url = EXCLUDED.source_url,
            author = EXCLUDED.author
          RETURNING *`,
         [
           vehicle.name || shipType,
+          stats.displayName,
           imageUrl,
           thumbnailUrl,
+          stats.category,
+          stats.manufacturer,
+          stats.crewMax,
+          stats.fuelCapacity,
+          stats.cargoCapacity,
+          stats.hullHp,
+          stats.sizeCategory,
           vehicle.link || `https://starcitizen.tools/${encodeURIComponent(vehicle.name || shipType)}`,
           'Star Citizen Wiki Community',
         ]
@@ -137,18 +171,30 @@ router.get('/lookup/:shipType', requireAuth, async (req, res, next) => {
  */
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { ship_type, image_url, thumbnail_url, source, source_url, license, license_url, author } = req.body;
+    const { ship_type, display_name, image_url, thumbnail_url, vehicle_category, manufacturer,
+            crew_max, fuel_capacity, cargo_capacity, hull_hp, size_category,
+            source, source_url, license, license_url, author } = req.body;
 
     if (!ship_type || !image_url) {
       return res.status(400).json({ error: 'ship_type and image_url required' });
     }
 
     const result = await query(
-      `INSERT INTO ship_images (ship_type, image_url, thumbnail_url, source, source_url, license, license_url, author)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO ship_images (ship_type, display_name, image_url, thumbnail_url, vehicle_category, manufacturer,
+         crew_max, fuel_capacity, cargo_capacity, hull_hp, size_category,
+         source, source_url, license, license_url, author)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (ship_type) DO UPDATE SET
+         display_name = EXCLUDED.display_name,
          image_url = EXCLUDED.image_url,
          thumbnail_url = EXCLUDED.thumbnail_url,
+         vehicle_category = EXCLUDED.vehicle_category,
+         manufacturer = EXCLUDED.manufacturer,
+         crew_max = EXCLUDED.crew_max,
+         fuel_capacity = EXCLUDED.fuel_capacity,
+         cargo_capacity = EXCLUDED.cargo_capacity,
+         hull_hp = EXCLUDED.hull_hp,
+         size_category = EXCLUDED.size_category,
          source = EXCLUDED.source,
          source_url = EXCLUDED.source_url,
          license = EXCLUDED.license,
@@ -157,8 +203,16 @@ router.post('/', requireAuth, async (req, res, next) => {
        RETURNING *`,
       [
         ship_type,
+        display_name || null,
         image_url,
         thumbnail_url || null,
+        vehicle_category || 'ship',
+        manufacturer || null,
+        crew_max ?? null,
+        fuel_capacity ?? null,
+        cargo_capacity ?? null,
+        hull_hp ?? null,
+        size_category || null,
         source || 'manual',
         source_url || null,
         license || 'CC-BY-NC-SA 4.0',
@@ -211,23 +265,36 @@ router.post('/sync-all', requireAuth, async (req, res, next) => {
         if (!imageUrl || !vehicle.name) continue;
 
         const thumbnailUrl = vehicle.media?.store_image?.sizes?.small || null;
-        const category = deriveCategory(vehicle);
-        const manufacturer = vehicle.manufacturer?.name || null;
+        const stats = extractVehicleStats(vehicle);
 
         await query(
-          `INSERT INTO ship_images (ship_type, image_url, thumbnail_url, vehicle_category, manufacturer, source, source_url, license, license_url, author)
-           VALUES ($1, $2, $3, $4, $5, 'sc_wiki', $6, 'CC-BY-NC-SA 4.0', 'https://creativecommons.org/licenses/by-nc-sa/4.0/', 'Star Citizen Wiki Community')
+          `INSERT INTO ship_images (ship_type, display_name, image_url, thumbnail_url, vehicle_category, manufacturer,
+             crew_max, fuel_capacity, cargo_capacity, hull_hp, size_category,
+             source, source_url, license, license_url, author)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'sc_wiki', $12, 'CC-BY-NC-SA 4.0', 'https://creativecommons.org/licenses/by-nc-sa/4.0/', 'Star Citizen Wiki Community')
            ON CONFLICT (ship_type) DO UPDATE SET
+             display_name = EXCLUDED.display_name,
              image_url = EXCLUDED.image_url,
              thumbnail_url = EXCLUDED.thumbnail_url,
              vehicle_category = EXCLUDED.vehicle_category,
-             manufacturer = EXCLUDED.manufacturer`,
+             manufacturer = EXCLUDED.manufacturer,
+             crew_max = EXCLUDED.crew_max,
+             fuel_capacity = EXCLUDED.fuel_capacity,
+             cargo_capacity = EXCLUDED.cargo_capacity,
+             hull_hp = EXCLUDED.hull_hp,
+             size_category = EXCLUDED.size_category`,
           [
             vehicle.name,
+            stats.displayName,
             imageUrl,
             thumbnailUrl,
-            category,
-            manufacturer,
+            stats.category,
+            stats.manufacturer,
+            stats.crewMax,
+            stats.fuelCapacity,
+            stats.cargoCapacity,
+            stats.hullHp,
+            stats.sizeCategory,
             vehicle.link || `https://starcitizen.tools/${encodeURIComponent(vehicle.name)}`,
           ]
         );

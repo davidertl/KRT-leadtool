@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useMissionStore } from '../stores/missionStore';
-import { useShipImage } from '../hooks/useShipImage';
+import { useVehicleData } from '../hooks/useVehicleData';
 import toast from 'react-hot-toast';
 
 const STATUS_OPTIONS = ['boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled'];
@@ -53,7 +53,7 @@ export default function UnitDetailPanel({ unitId, onClose }) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editNotes, setEditNotes] = useState('');
-  const { imageUrl, thumbnailUrl, loading: imgLoading, license } = useShipImage(unit?.ship_type);
+  const { imageUrl, thumbnailUrl, loading: imgLoading, license, vehicleData } = useVehicleData(unit?.ship_type);
 
   // Permission check
   const canEditUnit = useMissionStore.getState().canEdit(unit?.group_id);
@@ -223,6 +223,57 @@ export default function UnitDetailPanel({ unitId, onClose }) {
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* Vehicle Specs (from Wiki API) */}
+      {vehicleData && (
+        <div className="bg-krt-bg rounded-lg p-2.5">
+          <label className="text-[10px] text-gray-500 block mb-1.5">Vehicle Specs</label>
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
+            {vehicleData.displayName && (
+              <div className="col-span-2">
+                <span className="text-gray-500">Name </span>
+                <span className="text-gray-200">{vehicleData.displayName}</span>
+              </div>
+            )}
+            {vehicleData.sizeCategory && (
+              <div>
+                <span className="text-gray-500">Size </span>
+                <span className="text-gray-200 capitalize">{vehicleData.sizeCategory}</span>
+              </div>
+            )}
+            {vehicleData.crewMax != null && (
+              <div>
+                <span className="text-gray-500">Max Crew </span>
+                <span className="text-gray-200">{vehicleData.crewMax}</span>
+              </div>
+            )}
+            {vehicleData.fuelCapacity != null && (
+              <div>
+                <span className="text-gray-500">Fuel </span>
+                <span className="text-gray-200">{vehicleData.fuelCapacity}</span>
+              </div>
+            )}
+            {vehicleData.cargoCapacity != null && (
+              <div>
+                <span className="text-gray-500">Cargo </span>
+                <span className="text-gray-200">{vehicleData.cargoCapacity} SCU</span>
+              </div>
+            )}
+            {vehicleData.hullHp != null && (
+              <div>
+                <span className="text-gray-500">Hull HP </span>
+                <span className="text-gray-200">{vehicleData.hullHp.toLocaleString()}</span>
+              </div>
+            )}
+            {vehicleData.manufacturer && (
+              <div className="col-span-3">
+                <span className="text-gray-500">Mfr </span>
+                <span className="text-gray-200">{vehicleData.manufacturer}</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
