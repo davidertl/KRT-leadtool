@@ -15,7 +15,6 @@ Warning! This is a WIP project in active development. For this early version my 
 - **Stanton system navigation** — Full celestial body rendering (Stanton star, 4 planets, 12 moons) with scaled 3D spheres, labels, and orbital marker rings. Auto-seeded on first startup with manual "Update Starmap" reset option.
 - **Navigation points** — Stations, rest stops, Lagrange points, comm arrays, jump points, and outposts displayed with type-specific 3D geometries and danger indicators.
 - **Waypoint paths** — Sequenced waypoints per unit, rendered as path lines on the map.
-- **Popup window UI** — All panels (Units, Persons, Groups, Tasks, Operations, Comms, Event Log, etc.) open as draggable, resizable floating windows with focus-based z-ordering. Menu bar with hotkey shortcuts (Alt+1 through Alt+9).
 
 ### Units & Persons
 - **Separated units and persons** — Ships/vehicles and persons have dedicated panels with type-appropriate fields. Persons omit fuel, ammo, hull, and crew fields; ships show full resource tracking.
@@ -214,20 +213,8 @@ docker compose up -d
 
 ## Navigation Database
 
-The Stanton system comes pre-seeded with:
-
-| Category | Count | Examples |
-|----------|-------|---------|
-| Star | 1 | Stanton |
-| Planets | 4 | Hurston, Crusader, ArcCorp, microTech |
-| Moons | 12 | Daymar, Cellin, Yela, Lyria, Wala, Aberdeen, Arial, Ita, Magda, Calliope, Clio, Euterpe |
-| Stations | 8 | Everus Harbor, Seraphim Station, Baijini Point, Port Tressler, + landing zones |
-| Rest Stops | 10 | HUR-L1 through L5, CRU-L1/L4/L5, ARC-L1, MIC-L1/L2 |
-| Comm Arrays | 4 | One per planet |
-| Outposts/POIs | 4 | GrimHEX, Klescher, Security Post Kareah, Delamar |
-| Jump Points | 3 | Stanton–Pyro, Stanton–Magnus, Stanton–Terra |
-| QT Routes | 24 | Connecting all major locations |
-
+Right now the navigation database is seeded with the Stanton system (star, planets, moons) and a selection of nav points (stations, rest stops, Lagrange points, comm arrays, jump points, outposts).
+All Ships, Persons, POIs or 
 Coordinates are in meters (system-local). The 3D map uses a 1:1,000,000 scale factor for rendering. (?)
 **note for myself** - need to verify the scale factor and coordinate system with in-game data, 'may' require adjustments. ;-) 
 

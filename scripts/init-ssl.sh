@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
 # SSL Initialization Script for KRT-Leadtool
-# Requests a Let's Encrypt certificate via Certbot using standalone mode
-# (temporarily stops nginx), then restarts everything.
+# Requests a Let's Encrypt certificate via Certbot using webroot mode.
+# Nginx starts automatically with a self-signed cert, so this just replaces it.
 #
 # Usage: ./scripts/init-ssl.sh lead.das-krt.com your@email.com
 # =============================================================================
@@ -17,25 +17,33 @@ echo "Domain: $DOMAIN"
 echo "Email:  $EMAIL"
 echo ""
 
-# Step 1: Stop nginx so certbot can use port 80
-echo "[1/3] Stopping nginx (if running)..."
-docker compose stop nginx 2>/dev/null || true
+# Step 1: Ensure services are running (nginx needs to serve ACME challenges)
+echo "[1/3] Ensuring services are running..."
+docker compose up -d
 
-# Step 2: Request certificate using standalone mode (no nginx needed)
+# Wait for nginx to be ready
+echo "    Waiting for nginx..."
+for i in $(seq 1 15); do
+  if docker exec krt-nginx nginx -t 2>/dev/null; then
+    break
+  fi
+  sleep 2
+done
+
+# Step 2: Request certificate using webroot mode (nginx stays running)
 echo "[2/3] Requesting Let's Encrypt certificate..."
-docker run --rm -p 80:80 \
-  -v krt-leadtool_certbot-certs:/etc/letsencrypt \
-  -v krt-leadtool_certbot-webroot:/var/www/certbot \
-  certbot/certbot certonly \
-  --standalone \
+docker compose run --rm certbot certonly \
+  --webroot \
+  -w /var/www/certbot \
   -d "$DOMAIN" \
   --email "$EMAIL" \
   --agree-tos \
-  --no-eff-email
+  --no-eff-email \
+  --force-renewal
 
-# Step 3: Start everything
-echo "[3/3] Starting all services..."
-docker compose up -d
+# Step 3: Reload nginx with the real certificate
+echo "[3/3] Reloading nginx with new certificate..."
+docker exec krt-nginx nginx -s reload
 
 echo ""
 echo "=== Done! ==="

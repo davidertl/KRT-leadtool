@@ -10,13 +10,16 @@ services:
     image: nginx:alpine
     container_name: krt-nginx
     restart: unless-stopped
+    entrypoint: ["/custom-entrypoint.sh"]
+    command: ["nginx", "-g", "daemon off;"]
     ports:
       - "80:80"
       - "443:443"
     volumes:
+      - ./nginx/docker-entrypoint.sh:/custom-entrypoint.sh:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - certbot-webroot:/var/www/certbot:ro
-      - certbot-certs:/etc/letsencrypt:ro
+      - certbot-certs:/etc/letsencrypt
       - frontend-build:/usr/share/nginx/html:ro
     depends_on:
       backend:
@@ -220,11 +223,16 @@ services:
   certbot:
     image: certbot/certbot:latest
     container_name: krt-certbot
+    environment:
+      - DOMAIN=${DOMAIN}
+      - CERTBOT_EMAIL=${CERTBOT_EMAIL}
     volumes:
       - certbot-webroot:/var/www/certbot
       - certbot-certs:/etc/letsencrypt
-    # Renew every 12 hours (only acts when renewal is due)
-    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet --deploy-hook "true"; sleep 12h & wait $${!}; done'
+    # On startup: obtain cert if missing/self-signed, then renew every 12h
+    entrypoint: /bin/sh -c 'trap exit TERM; CERT="/etc/letsencrypt/live/$${DOMAIN}/fullchain.pem"; NEED_CERT=0; if [ ! -f "$$CERT" ]; then NEED_CERT=1; elif openssl x509 -in "$$CERT" -issuer -noout 2>/dev/null | grep -q "CN = $${DOMAIN}"; then NEED_CERT=1; fi; if [ "$$NEED_CERT" = "1" ]; then echo "[KRT-Certbot] No real certificate found. Requesting from Lets Encrypt..."; sleep 15; certbot certonly --webroot -w /var/www/certbot -d $${DOMAIN} --email $${CERTBOT_EMAIL} --agree-tos --no-eff-email --non-interactive && echo "[KRT-Certbot] Certificate obtained!" || echo "[KRT-Certbot] Request failed (will retry on next restart)."; fi; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+    depends_on:
+      - nginx
     restart: unless-stopped
     logging:
       driver: json-file

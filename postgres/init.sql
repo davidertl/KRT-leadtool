@@ -699,9 +699,11 @@ CREATE TABLE operation_roe (
     operation_id    UUID NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
     target_type     VARCHAR(16) NOT NULL,             -- 'all', 'group', 'unit'
     target_id       UUID,                             -- NULL for 'all', group_id or unit_id
-    roe             roe_preset NOT NULL DEFAULT 'self_defence',
-    UNIQUE(operation_id, target_type, COALESCE(target_id, '00000000-0000-0000-0000-000000000000'))
+    roe             roe_preset NOT NULL DEFAULT 'self_defence'
 );
+
+CREATE UNIQUE INDEX uq_operation_roe_target
+    ON operation_roe (operation_id, target_type, COALESCE(target_id, '00000000-0000-0000-0000-000000000000'));
 
 CREATE INDEX idx_operation_roe_op ON operation_roe(operation_id);
 
