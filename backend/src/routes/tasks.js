@@ -7,12 +7,13 @@ const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
 const { requireMissionMember } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
+const { insertEventLog } = require('../helpers/eventLog');
 const { validate } = require('../validation/middleware');
 const { z } = require('zod');
 
 const PRIORITY_VALUES = ['low', 'normal', 'high', 'critical'];
 const STATUS_VALUES = ['pending', 'assigned', 'in_progress', 'completed', 'cancelled'];
-const TASK_TYPE_VALUES = ['custom', 'escort', 'intercept', 'recon', 'pickup', 'dropoff', 'hold', 'patrol', 'screen', 'qrf', 'rescue', 'repair', 'refuel', 'medevac', 'supply_run'];
+const TASK_TYPE_VALUES = ['custom', 'escort', 'intercept', 'recon', 'pickup', 'dropoff', 'hold', 'patrol', 'screen', 'qrf', 'rescue', 'repair', 'refuel', 'medevac', 'supply_run', 'move'];
 const ROE_VALUES = ['aggressive', 'fire_at_will', 'fire_at_id_target', 'self_defence', 'dnf'];
 
 const createTask = z.object({
@@ -28,6 +29,8 @@ const createTask = z.object({
   target_y: z.number().finite().optional().nullable(),
   target_z: z.number().finite().optional().nullable(),
   target_contact: z.string().uuid().optional().nullable(),
+  source_contact_id: z.string().uuid().optional().nullable(),
+  phase_id: z.string().uuid().optional().nullable(),
   start_at: z.string().datetime().optional().nullable(),
   due_at: z.string().datetime().optional().nullable(),
   depends_on: z.string().uuid().optional().nullable(),
@@ -46,6 +49,8 @@ const updateTask = z.object({
   target_y: z.number().finite().optional().nullable(),
   target_z: z.number().finite().optional().nullable(),
   target_contact: z.string().uuid().optional().nullable(),
+  source_contact_id: z.string().uuid().optional().nullable(),
+  phase_id: z.string().uuid().optional().nullable(),
   start_at: z.string().datetime().optional().nullable(),
   due_at: z.string().datetime().optional().nullable(),
   depends_on: z.string().uuid().optional().nullable(),
@@ -84,19 +89,20 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
 // Create task
 router.post('/', requireAuth, validate(createTask), requireMissionMember, async (req, res, next) => {
   try {
-    const { mission_id, title, description, task_type, priority, roe, assigned_to, assigned_group, target_x, target_y, target_z, target_contact, start_at, due_at, depends_on } = req.body;
+    const { mission_id, title, description, task_type, priority, roe, assigned_to, assigned_group, target_x, target_y, target_z, target_contact, source_contact_id, phase_id, start_at, due_at, depends_on } = req.body;
 
     // If assigned, set status to 'assigned'
     const status = (assigned_to || assigned_group) ? 'assigned' : 'pending';
 
     const result = await query(
-      `INSERT INTO tasks (mission_id, created_by, title, description, task_type, priority, status, roe, assigned_to, assigned_group, target_x, target_y, target_z, target_contact, start_at, due_at, depends_on)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      `INSERT INTO tasks (mission_id, created_by, title, description, task_type, priority, status, roe, assigned_to, assigned_group, target_x, target_y, target_z, target_contact, source_contact_id, phase_id, start_at, due_at, depends_on)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`,
-      [mission_id, req.user.id, title, description, task_type || 'custom', priority, status, roe || 'self_defence', assigned_to, assigned_group, target_x, target_y, target_z, target_contact, start_at, due_at, depends_on]
+      [mission_id, req.user.id, title, description, task_type || 'custom', priority, status, roe || 'self_defence', assigned_to, assigned_group, target_x, target_y, target_z, target_contact, source_contact_id || null, phase_id || null, start_at, due_at, depends_on]
     );
 
     broadcastToMission(mission_id, 'task:created', result.rows[0]);
+    await insertEventLog({ mission_id, event_type: 'task_update', message: `Task "${title}" created (${task_type || 'custom'}, ${priority})`, user_id: req.user.id });
     res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
 });
@@ -127,8 +133,12 @@ router.put('/:id', requireAuth, validate(updateTask), async (req, res, next) => 
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Task not found' });
 
-    broadcastToMission(result.rows[0].mission_id, 'task:updated', result.rows[0]);
-    res.json(result.rows[0]);
+    const task = result.rows[0];
+    broadcastToMission(task.mission_id, 'task:updated', task);
+    if (req.body.status) {
+      await insertEventLog({ mission_id: task.mission_id, event_type: 'task_update', message: `Task "${task.title}" → ${req.body.status}`, user_id: req.user.id });
+    }
+    res.json(task);
   } catch (err) { next(err); }
 });
 

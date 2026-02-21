@@ -33,14 +33,14 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
 // Create group
 router.post('/', requireAuth, validate(schemas.createGroup), requireMissionMember, async (req, res, next) => {
   try {
-    const { name, mission_id, class_type, color, icon } = req.body;
+    const { name, mission_id, class_type, color, icon, role, roe, vhf_channel } = req.body;
     if (!name || !mission_id) return res.status(400).json({ error: 'name and mission_id are required' });
 
     const result = await query(
-      `INSERT INTO groups (name, mission_id, class_type, color, icon)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO groups (name, mission_id, class_type, color, icon, role, roe, vhf_channel)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [name, mission_id, class_type || 'CUSTOM', color || '#3B82F6', icon || 'default']
+      [name, mission_id, class_type || 'CUSTOM', color || '#3B82F6', icon || 'default', role || null, roe || 'self_defence', vhf_channel || null]
     );
 
     broadcastToMission(mission_id, 'group:created', result.rows[0]);
@@ -51,17 +51,20 @@ router.post('/', requireAuth, validate(schemas.createGroup), requireMissionMembe
 // Update group
 router.put('/:id', requireAuth, validate(schemas.updateGroup), async (req, res, next) => {
   try {
-    const { name, class_type, color, icon } = req.body;
+    const { name, class_type, color, icon, role, roe, vhf_channel } = req.body;
 
     const result = await query(
       `UPDATE groups SET
          name = COALESCE($1, name),
          class_type = COALESCE($2, class_type),
          color = COALESCE($3, color),
-         icon = COALESCE($4, icon)
-       WHERE id = $5
+         icon = COALESCE($4, icon),
+         role = COALESCE($5, role),
+         roe = COALESCE($6, roe),
+         vhf_channel = COALESCE($7, vhf_channel)
+       WHERE id = $8
        RETURNING *`,
-      [name, class_type, color, icon, req.params.id]
+      [name, class_type, color, icon, role, roe, vhf_channel, req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Group not found' });
 

@@ -45,7 +45,7 @@ function ResourceBar({ label, value, color, warning = 25 }) {
  * Detailed panel for a single selected unit — shows info, position, history, and edit controls
  */
 export default function UnitDetailPanel({ unitId, onClose }) {
-  const { units, groups, waypoints, focusUnit } = useMissionStore();
+  const { units, groups, waypoints, tasks, contacts, focusUnit } = useMissionStore();
   const unit = units.find((u) => u.id === unitId);
   const group = unit ? groups.find((g) => g.id === unit.group_id) : null;
   const unitWaypoints = unit ? waypoints.filter((w) => w.unit_id === unit.id).sort((a, b) => a.sequence - b.sequence) : [];
@@ -53,6 +53,15 @@ export default function UnitDetailPanel({ unitId, onClose }) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [editCallsign, setEditCallsign] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const [editRoe, setEditRoe] = useState('');
+  const [editGroupId, setEditGroupId] = useState('');
+  const [editFuel, setEditFuel] = useState(100);
+  const [editAmmo, setEditAmmo] = useState(100);
+  const [editHull, setEditHull] = useState(100);
+  const [editCrewCount, setEditCrewCount] = useState(1);
+  const [editCrewMax, setEditCrewMax] = useState('');
   const { imageUrl, thumbnailUrl, loading: imgLoading, license, vehicleData } = useVehicleData(unit?.ship_type);
 
   // Permission check
@@ -67,6 +76,15 @@ export default function UnitDetailPanel({ unitId, onClose }) {
     if (!unit) return;
     setEditName(unit.name);
     setEditNotes(unit.notes || '');
+    setEditCallsign(unit.callsign || '');
+    setEditRole(unit.role || '');
+    setEditRoe(unit.roe || 'self_defence');
+    setEditGroupId(unit.group_id || '');
+    setEditFuel(unit.fuel ?? 100);
+    setEditAmmo(unit.ammo ?? 100);
+    setEditHull(unit.hull ?? 100);
+    setEditCrewCount(unit.crew_count ?? 1);
+    setEditCrewMax(unit.crew_max ?? '');
 
     // Fetch history
     fetch(`/api/history/${unit.id}?limit=10`, { credentials: 'include' })
@@ -102,11 +120,24 @@ export default function UnitDetailPanel({ unitId, onClose }) {
 
   const handleSaveEdit = async () => {
     try {
+      const payload = {
+        name: editName,
+        notes: editNotes || null,
+        callsign: editCallsign || null,
+        role: editRole || null,
+        roe: editRoe || 'self_defence',
+        group_id: editGroupId || null,
+        fuel: Number(editFuel),
+        ammo: Number(editAmmo),
+        hull: Number(editHull),
+        crew_count: Number(editCrewCount) || 1,
+        crew_max: editCrewMax ? Number(editCrewMax) : null,
+      };
       const res = await fetch(`/api/units/${unit.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name: editName, notes: editNotes || null }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Failed to update');
       const updated = await res.json();
@@ -278,7 +309,68 @@ export default function UnitDetailPanel({ unitId, onClose }) {
       )}
 
       {/* Callsign, Discord ID, Role, Unit Type */}
-      <div className="grid grid-cols-2 gap-2">
+      {editing ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-gray-600 block">Callsign</label>
+              <input type="text" value={editCallsign} onChange={(e) => setEditCallsign(e.target.value)}
+                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" placeholder="Callsign" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-600 block">Role</label>
+              <input type="text" value={editRole} onChange={(e) => setEditRole(e.target.value)}
+                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" placeholder="Role" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-gray-600 block">Crew Count</label>
+              <input type="number" min={0} value={editCrewCount} onChange={(e) => setEditCrewCount(e.target.value)}
+                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-600 block">Crew Max</label>
+              <input type="number" min={0} value={editCrewMax} onChange={(e) => setEditCrewMax(e.target.value)}
+                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-600 block">Group</label>
+            <select value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)}
+              className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent">
+              <option value="">— No Group —</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-600 block">ROE</label>
+            <div className="flex flex-wrap gap-1">
+              {Object.entries(ROE_LABELS).map(([key, { label, color }]) => (
+                <button key={key} type="button" onClick={() => setEditRoe(key)}
+                  className={`text-xs px-2 py-1 rounded-full transition-colors border ${editRoe === key ? 'border-white' : 'border-krt-border'}`}
+                  style={{ backgroundColor: editRoe === key ? color + '30' : 'transparent', color }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-600 block mb-1">Resources</label>
+            <div className="space-y-1">
+              {[['Fuel', editFuel, setEditFuel, '#3b82f6'], ['Ammo', editAmmo, setEditAmmo, '#f59e0b'], ['Hull', editHull, setEditHull, '#22c55e']].map(([lbl, val, setter, col]) => (
+                <div key={lbl} className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 w-10">{lbl}</span>
+                  <input type="range" min={0} max={100} value={val} onChange={(e) => setter(Number(e.target.value))}
+                    className="flex-1 h-2 accent-krt-accent" style={{ accentColor: col }} />
+                  <span className="text-[10px] text-gray-400 w-8 text-right font-mono">{val}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
         {unit.callsign && (
           <div>
             <label className="text-[10px] text-gray-600">Callsign</label>
@@ -316,8 +408,10 @@ export default function UnitDetailPanel({ unitId, onClose }) {
           </div>
         )}
       </div>
+      )}
 
-      {/* Resources */}
+      {/* Resources (read-only when not editing) */}
+      {!editing && (
       <div>
         <label className="text-xs text-gray-500 block mb-1">Resources</label>
         <div className="space-y-1.5">
@@ -326,9 +420,10 @@ export default function UnitDetailPanel({ unitId, onClose }) {
           <ResourceBar label="HULL" value={unit.hull} color="#22c55e" />
         </div>
       </div>
+      )}
 
-      {/* ROE */}
-      {unit.roe && (
+      {/* ROE (read-only when not editing) */}
+      {!editing && unit.roe && (
         <div>
           <label className="text-xs text-gray-500 block mb-1">ROE</label>
           <span
@@ -362,7 +457,8 @@ export default function UnitDetailPanel({ unitId, onClose }) {
       </div>
 
       {/* Group */}
-      {group && (
+      {/* Group (read-only; editable in edit mode above) */}
+      {!editing && group && (
         <div>
           <label className="text-xs text-gray-500 block mb-1">Group</label>
           <div className="flex items-center gap-2">
@@ -449,6 +545,45 @@ export default function UnitDetailPanel({ unitId, onClose }) {
           </p>
         )}
       </div>
+
+      {/* Assigned Tasks */}
+      {(() => {
+        const unitTasks = tasks.filter((t) => t.assigned_to === unit.id && t.status !== 'completed' && t.status !== 'cancelled');
+        return unitTasks.length > 0 ? (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Assigned Tasks ({unitTasks.length})</label>
+            <div className="space-y-1 max-h-28 overflow-y-auto">
+              {unitTasks.map((t) => (
+                <div key={t.id} className="flex items-center gap-2 text-xs bg-krt-bg rounded px-2 py-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${t.priority === 'critical' ? 'bg-red-500' : t.priority === 'high' ? 'bg-orange-500' : 'bg-blue-500'}`} />
+                  <span className="text-white truncate flex-1">{t.title}</span>
+                  <span className="text-gray-500 capitalize">{t.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
+
+      {/* Related Contacts (reported by this unit's owner or linked) */}
+      {(() => {
+        const unitContacts = contacts.filter((c) => c.is_active);
+        // Show up to 5 most recent active contacts for reference
+        return unitContacts.length > 0 ? (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Active Contacts ({unitContacts.length})</label>
+            <div className="space-y-1 max-h-24 overflow-y-auto">
+              {unitContacts.slice(0, 5).map((c) => (
+                <div key={c.id} className="flex items-center gap-2 text-xs bg-krt-bg rounded px-2 py-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${c.iff === 'hostile' ? 'bg-red-500' : c.iff === 'friendly' ? 'bg-green-500' : c.iff === 'neutral' ? 'bg-yellow-500' : 'bg-gray-500'}`} />
+                  <span className="text-white truncate flex-1">{c.name || c.ship_type || 'Contact'} ×{c.count}</span>
+                  <span className="text-gray-500 capitalize">{c.threat}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
 
       {/* Waypoints */}
       {unitWaypoints.length > 0 && (

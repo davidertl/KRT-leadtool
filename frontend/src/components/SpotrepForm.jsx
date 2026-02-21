@@ -60,6 +60,7 @@ export default function SpotrepForm({ missionId, onClose }) {
   const [count, setCount] = useState(1);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [createdContact, setCreatedContact] = useState(null); // after submit, for "Create Task" flow
 
   // Relative position fields
   const [refId, setRefId] = useState('');
@@ -119,6 +120,18 @@ export default function SpotrepForm({ missionId, onClose }) {
     ? computeRelativePosition(selectedRef, bearing, distanceKm, elevation)
     : null;
 
+  // Auto-generate name: [threat] RefPoint distance
+  const autoName = useMemo(() => {
+    if (!selectedRef) return '';
+    const refLabel = selectedRef.label.split(' (')[0];
+    const dist = distanceKm > 0 ? ` ${distanceKm}km` : '';
+    const typeLabel = shipType || iff;
+    return `${typeLabel} ${refLabel}${dist}`.trim();
+  }, [selectedRef, distanceKm, shipType, iff]);
+
+  // Use autoName as fallback if name is empty
+  const effectiveName = name.trim() || autoName;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -140,7 +153,7 @@ export default function SpotrepForm({ missionId, onClose }) {
           iff,
           threat,
           confidence,
-          name: name || null,
+          name: effectiveName || null,
           ship_type: shipType || null,
           count,
           pos_x: pos.x,
@@ -154,14 +167,68 @@ export default function SpotrepForm({ missionId, onClose }) {
       });
 
       if (!res.ok) throw new Error('Failed to submit');
+      const contact = await res.json();
+      setCreatedContact(contact);
       toast.success('SPOTREP filed');
-      onClose();
     } catch {
       toast.error('Failed to submit SPOTREP');
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Create task from spotrep
+  const handleCreateTask = async () => {
+    if (!createdContact) return;
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          mission_id: missionId,
+          title: `Respond to: ${createdContact.name || 'Contact'}`,
+          description: `Auto-created from SPOTREP. ${createdContact.iff} ${createdContact.ship_type || ''} ×${createdContact.count}. Threat: ${createdContact.threat}`,
+          task_type: createdContact.iff === 'hostile' ? 'intercept' : 'recon',
+          priority: createdContact.threat === 'critical' ? 'critical' : createdContact.threat === 'high' ? 'high' : 'normal',
+          target_x: createdContact.pos_x,
+          target_y: createdContact.pos_y,
+          target_z: createdContact.pos_z,
+          target_contact: createdContact.id,
+          source_contact_id: createdContact.id,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      toast.success('Task created from SPOTREP');
+      onClose();
+    } catch {
+      toast.error('Failed to create task');
+    }
+  };
+
+  // Post-submission view
+  if (createdContact) {
+    return (
+      <div className="space-y-3">
+        <h4 className="text-sm font-bold text-green-400 flex items-center gap-1.5">✅ SPOTREP Filed</h4>
+        <div className="bg-krt-bg/50 rounded-lg p-3 text-sm space-y-1">
+          <div className="text-white font-semibold">{createdContact.name || 'Contact'}</div>
+          <div className="text-xs text-gray-400">
+            {createdContact.iff} · {createdContact.threat} threat · ×{createdContact.count}
+          </div>
+          {createdContact.ship_type && <div className="text-xs text-gray-500">{createdContact.ship_type}</div>}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleCreateTask} className="bg-krt-accent text-white text-sm px-3 py-1.5 rounded">
+            🎯 Create Task from SPOTREP
+          </button>
+          <button onClick={onClose} className="text-gray-400 text-sm px-3 py-1">
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
@@ -237,12 +304,12 @@ export default function SpotrepForm({ missionId, onClose }) {
       {/* Identification */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Ref. Point & Distance / Name</label>
+          <label className="text-xs text-gray-500 block mb-1">Name {autoName && <span className="text-gray-600">(auto: {autoName})</span>}</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Unknown"
+            placeholder={autoName || 'Unknown'}
             className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent"
           />
         </div>

@@ -57,6 +57,13 @@ export function connectSocket(missionId) {
           if (data.groups?.length) data.groups.forEach((g) => store.updateGroup(g));
           if (data.contacts?.length) data.contacts.forEach((c) => store.updateContact(c));
           if (data.tasks?.length) data.tasks.forEach((t) => store.updateTask(t));
+          if (data.operations?.length) data.operations.forEach((o) => store.updateOperation(o));
+          if (data.operationPhases?.length) store.setOperationPhases(data.operationPhases);
+          if (data.operationRoe?.length) store.setOperationRoe(data.operationRoe);
+          if (data.operationNotes?.length) store.setOperationNotes(data.operationNotes);
+          if (data.events?.length) store.setEvents(data.events);
+          if (data.messages?.length) store.setMessages(data.messages);
+          if (data.bookmarks?.length) store.setBookmarks(data.bookmarks);
           store.setLastSyncTime(data.server_time);
         })
         .catch(() => {});
@@ -101,6 +108,20 @@ export function connectSocket(missionId) {
   socket.on('operation:created', (op) => useMissionStore.getState().addOperation(op));
   socket.on('operation:updated', (op) => useMissionStore.getState().updateOperation(op));
   socket.on('operation:deleted', ({ id }) => useMissionStore.getState().removeOperation(id));
+
+  // Operation phases
+  socket.on('operationPhase:created', (phase) => useMissionStore.getState().addOperationPhase(phase));
+  socket.on('operationPhase:updated', (phase) => useMissionStore.getState().updateOperationPhase(phase));
+  socket.on('operationPhase:deleted', ({ id }) => useMissionStore.getState().removeOperationPhase(id));
+
+  // Operation per-entity ROE
+  socket.on('operationRoe:updated', (roe) => useMissionStore.getState().upsertOperationRoe(roe));
+  socket.on('operationRoe:deleted', ({ id }) => useMissionStore.getState().removeOperationRoe(id));
+
+  // Operation notes
+  socket.on('operationNote:created', (note) => useMissionStore.getState().addOperationNote(note));
+  socket.on('operationNote:updated', (note) => useMissionStore.getState().updateOperationNote(note));
+  socket.on('operationNote:deleted', ({ id }) => useMissionStore.getState().removeOperationNote(id));
 
   // Event log
   socket.on('event:created', (event) => useMissionStore.getState().addEvent(event));

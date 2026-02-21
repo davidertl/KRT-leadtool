@@ -31,6 +31,18 @@ db.version(3).stores({
   syncMeta: 'key',
 });
 
+db.version(4).stores({
+  units: 'id, mission_id, group_id, owner_id, status, updated_at',
+  groups: 'id, mission_id, class_type',
+  waypoints: 'id, unit_id, sequence',
+  contacts: 'id, mission_id, iff, is_active, updated_at',
+  tasks: 'id, mission_id, status, priority, updated_at',
+  operationPhases: 'id, operation_id, sort_order',
+  operationRoe: 'id, operation_id, target_type, target_id',
+  operationNotes: 'id, operation_id, phase_id',
+  syncMeta: 'key',
+});
+
 /**
  * Save the last sync timestamp for a mission
  */

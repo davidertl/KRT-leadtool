@@ -7,18 +7,20 @@ export default function DashboardPage() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const [missions, setMissions] = useState([]);
+  const [publicMissions, setPublicMissions] = useState([]);
   const [newMissionName, setNewMissionName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/missions', { credentials: 'include' })
-      .then((res) => res.json())
-      .then((data) => {
-        setMissions(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    Promise.all([
+      fetch('/api/missions', { credentials: 'include' }).then((r) => r.json()),
+      fetch('/api/missions/public', { credentials: 'include' }).then((r) => r.json()).catch(() => []),
+    ]).then(([mine, pub]) => {
+      setMissions(Array.isArray(mine) ? mine : []);
+      setPublicMissions(Array.isArray(pub) ? pub : []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
 
   const createMission = async (e) => {
@@ -63,6 +65,60 @@ export default function DashboardPage() {
       toast.error('Network error');
     }
   };
+
+  const handleJoinPublic = async (missionId) => {
+    try {
+      const res = await fetch('/api/members/join-public', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ mission_id: missionId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success('Joined mission!');
+        // Refresh my missions
+        const mine = await fetch('/api/missions', { credentials: 'include' }).then((r) => r.json());
+        setMissions(Array.isArray(mine) ? mine : []);
+      } else {
+        toast.error(data.error || 'Failed to join');
+      }
+    } catch { toast.error('Network error'); }
+  };
+
+  const handleLeave = async (missionId, missionName) => {
+    if (!confirm(`Leave "${missionName}"? You will lose access.`)) return;
+    try {
+      const res = await fetch(`/api/members/${missionId}/leave`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed');
+      }
+      setMissions((prev) => prev.filter((m) => m.id !== missionId));
+      toast.success(`Left "${missionName}"`);
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const handleDelete = async (missionId, missionName) => {
+    if (!confirm(`DELETE "${missionName}"? This cannot be undone!`)) return;
+    try {
+      const res = await fetch(`/api/missions/${missionId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed');
+      }
+      setMissions((prev) => prev.filter((m) => m.id !== missionId));
+      toast.success(`Deleted "${missionName}"`);
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const isOwner = (mission) => mission.owner_id === user?.id;
 
   return (
     <div className="min-h-screen bg-krt-bg p-6">
@@ -116,34 +172,94 @@ export default function DashboardPage() {
           </button>
         </form>
 
-        {/* Mission list */}
+        {/* My missions */}
+        <h2 className="text-lg font-semibold text-white mb-3">My Missions</h2>
         {loading ? (
           <p className="text-gray-400 text-center">Loading missions...</p>
         ) : missions.length === 0 ? (
-          <div className="text-center text-gray-500 py-12">
+          <div className="text-center text-gray-500 py-8">
             <p className="text-lg mb-2">No missions yet</p>
             <p className="text-sm">Create your first mission above to get started.</p>
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 mb-8">
             {missions.map((mission) => (
-              <button
+              <div
                 key={mission.id}
-                onClick={() => navigate(`/map/${mission.id}`)}
-                className="bg-krt-panel border border-krt-border rounded-xl p-5 text-left hover:border-krt-accent transition-colors group"
+                className="bg-krt-panel border border-krt-border rounded-xl p-5 hover:border-krt-accent transition-colors group relative"
               >
-                <h3 className="text-lg font-semibold group-hover:text-krt-accent transition-colors">
-                  {mission.name}
-                </h3>
-                <p className="text-gray-500 text-sm mt-1">
-                  {mission.description || 'No description'}
-                </p>
-                <p className="text-gray-600 text-xs mt-3">
-                  Created {new Date(mission.created_at).toLocaleDateString()}
-                </p>
-              </button>
+                <button
+                  onClick={() => navigate(`/map/${mission.id}`)}
+                  className="text-left w-full"
+                >
+                  <h3 className="text-lg font-semibold group-hover:text-krt-accent transition-colors">
+                    {mission.name}
+                    {mission.is_public && <span className="ml-2 text-xs text-green-400">🌐</span>}
+                  </h3>
+                  <p className="text-gray-500 text-sm mt-1">
+                    {mission.description || 'No description'}
+                  </p>
+                  <p className="text-gray-600 text-xs mt-3">
+                    Created {new Date(mission.created_at).toLocaleDateString()}
+                    {isOwner(mission) && <span className="ml-2 text-krt-accent">👑 Owner</span>}
+                  </p>
+                </button>
+
+                {/* Action buttons */}
+                <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {!isOwner(mission) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleLeave(mission.id, mission.name); }}
+                      className="text-xs bg-yellow-500/10 text-yellow-400 px-2 py-1 rounded hover:bg-yellow-500/20"
+                      title="Leave mission"
+                    >
+                      🚪 Leave
+                    </button>
+                  )}
+                  {isOwner(mission) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(mission.id, mission.name); }}
+                      className="text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded hover:bg-red-500/20"
+                      title="Delete mission"
+                    >
+                      🗑️ Delete
+                    </button>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
+        )}
+
+        {/* Public missions */}
+        {publicMissions.length > 0 && (
+          <>
+            <h2 className="text-lg font-semibold text-white mb-3">🌐 Public Missions</h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              {publicMissions
+                .filter((pm) => !missions.some((m) => m.id === pm.id))
+                .map((pm) => (
+                  <div
+                    key={pm.id}
+                    className="bg-krt-panel border border-krt-border rounded-xl p-5 flex items-start justify-between"
+                  >
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">{pm.name}</h3>
+                      <p className="text-gray-500 text-xs mt-1">{pm.description || 'No description'}</p>
+                      <p className="text-gray-600 text-[10px] mt-2">
+                        {pm.member_count} member{pm.member_count !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleJoinPublic(pm.id)}
+                      className="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                    >
+                      Join
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </>
         )}
       </div>
     </div>

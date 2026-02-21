@@ -7,6 +7,7 @@ const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
 const { requireMissionMember } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
+const { insertEventLog } = require('../helpers/eventLog');
 const { validate } = require('../validation/middleware');
 const { z } = require('zod');
 
@@ -88,6 +89,7 @@ router.post('/', requireAuth, validate(createContact), requireMissionMember, asy
     );
 
     broadcastToMission(mission_id, 'contact:created', result.rows[0]);
+    await insertEventLog({ mission_id, event_type: 'contact', message: `SPOTREP: ${iff} ${ship_type || 'unknown'} (×${count})${name ? ' — ' + name : ''}`, user_id: req.user.id });
     res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
 });
@@ -116,8 +118,12 @@ router.put('/:id', requireAuth, validate(updateContact), async (req, res, next) 
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Contact not found' });
 
-    broadcastToMission(result.rows[0].mission_id, 'contact:updated', result.rows[0]);
-    res.json(result.rows[0]);
+    const contact = result.rows[0];
+    broadcastToMission(contact.mission_id, 'contact:updated', contact);
+    if (req.body.iff || req.body.threat) {
+      await insertEventLog({ mission_id: contact.mission_id, event_type: 'contact', message: `Contact updated: ${contact.name || contact.id} → IFF:${contact.iff} Threat:${contact.threat}`, user_id: req.user?.id });
+    }
+    res.json(contact);
   } catch (err) { next(err); }
 });
 

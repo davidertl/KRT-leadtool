@@ -209,4 +209,48 @@ router.delete('/:mission_id/members/:userId', requireAuth, requireMissionMember,
   } catch (err) { next(err); }
 });
 
+// ---- Leave a mission ----
+router.post('/:mission_id/leave', requireAuth, requireMissionMember, async (req, res, next) => {
+  try {
+    // Check if user is the owner — owners must delete the mission or transfer ownership
+    const mission = await query('SELECT owner_id FROM missions WHERE id = $1', [req.params.mission_id]);
+    if (mission.rows.length > 0 && mission.rows[0].owner_id === req.user.id) {
+      return res.status(400).json({ error: 'Mission owner cannot leave. Delete the mission or transfer ownership.' });
+    }
+
+    await query('DELETE FROM mission_members WHERE mission_id = $1 AND user_id = $2', [req.params.mission_id, req.user.id]);
+
+    broadcastToMission(req.params.mission_id, 'member:removed', { user_id: req.user.id });
+
+    res.json({ message: 'You have left the mission' });
+  } catch (err) { next(err); }
+});
+
+// ---- Join a public mission (no code needed) ----
+router.post('/join-public', requireAuth, async (req, res, next) => {
+  try {
+    const { mission_id } = req.body;
+    if (!mission_id) return res.status(400).json({ error: 'mission_id is required' });
+
+    // Verify mission is public
+    const missionResult = await query('SELECT id, name, is_public FROM missions WHERE id = $1', [mission_id]);
+    if (missionResult.rows.length === 0) return res.status(404).json({ error: 'Mission not found' });
+    if (!missionResult.rows[0].is_public) return res.status(403).json({ error: 'Mission is not public' });
+
+    // Check if already a member
+    const existing = await query('SELECT 1 FROM mission_members WHERE mission_id = $1 AND user_id = $2', [mission_id, req.user.id]);
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Already a member of this mission' });
+
+    // Add as member with teamlead role (lowest permission)
+    await query(
+      `INSERT INTO mission_members (mission_id, user_id, role, mission_role) VALUES ($1, $2, 'member', 'teamlead')`,
+      [mission_id, req.user.id]
+    );
+
+    broadcastToMission(mission_id, 'member:accepted', { user_id: req.user.id, mission_role: 'teamlead' });
+
+    res.status(201).json({ message: `Joined "${missionResult.rows[0].name}"` });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

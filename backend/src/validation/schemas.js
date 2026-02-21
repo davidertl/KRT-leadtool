@@ -84,6 +84,9 @@ const createGroup = z.object({
   class_type: z.enum(CLASS_TYPES).default('CUSTOM'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#3B82F6'),
   icon: z.string().max(64).default('default'),
+  role: z.string().max(128).optional().nullable(),
+  roe: z.enum(ROE_VALUES).optional(),
+  vhf_channel: z.string().max(64).optional().nullable(),
 });
 
 const updateGroup = z.object({
@@ -91,6 +94,9 @@ const updateGroup = z.object({
   class_type: z.enum(CLASS_TYPES).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   icon: z.string().max(64).optional(),
+  role: z.string().max(128).optional().nullable(),
+  roe: z.enum(ROE_VALUES).optional(),
+  vhf_channel: z.string().max(64).optional().nullable(),
 });
 
 // ---- Waypoints ----
@@ -110,12 +116,14 @@ const createMission = z.object({
   name: z.string().min(1).max(256),
   description: z.string().max(2000).optional().nullable(),
   settings: z.record(z.unknown()).optional().default({}),
+  is_public: z.boolean().optional().default(false),
 });
 
 const updateMission = z.object({
   name: z.string().min(1).max(256).optional(),
   description: z.string().max(2000).optional().nullable(),
   settings: z.record(z.unknown()).optional(),
+  is_public: z.boolean().optional(),
 });
 
 const addMissionMember = z.object({

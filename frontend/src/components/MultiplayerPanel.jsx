@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMissionStore } from '../stores/missionStore';
 import toast from 'react-hot-toast';
 
@@ -29,6 +29,9 @@ export default function MultiplayerPanel({ missionId }) {
     <div className="space-y-4">
       {/* Join Code */}
       <JoinCodeSection missionId={missionId} />
+
+      {/* Public / Private toggle (gesamtlead only) */}
+      {myMissionRole === 'gesamtlead' && <VisibilityToggle missionId={missionId} />}
 
       {/* Pending join requests */}
       {canManage && joinRequests.length > 0 && (
@@ -71,6 +74,62 @@ export default function MultiplayerPanel({ missionId }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Toggle mission is_public */
+function VisibilityToggle({ missionId }) {
+  const [isPublic, setIsPublic] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/missions/${missionId}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setIsPublic(!!d.is_public))
+      .catch(() => {});
+  }, [missionId]);
+
+  const toggle = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/missions/${missionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ is_public: !isPublic }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      setIsPublic(!isPublic);
+      toast.success(isPublic ? 'Mission set to private' : 'Mission set to public');
+    } catch { toast.error('Failed'); }
+    setLoading(false);
+  };
+
+  if (isPublic === null) return null;
+
+  return (
+    <div className="bg-krt-bg/80 rounded-lg p-3 flex items-center justify-between">
+      <div>
+        <label className="text-xs text-gray-500 block">Visibility</label>
+        <span className={`text-sm font-medium ${isPublic ? 'text-green-400' : 'text-gray-400'}`}>
+          {isPublic ? '🌐 Public' : '🔒 Private'}
+        </span>
+        <p className="text-[10px] text-gray-600">
+          {isPublic ? 'Anyone can find and join without a code' : 'Requires join code to request access'}
+        </p>
+      </div>
+      <button
+        onClick={toggle}
+        disabled={loading}
+        className={`text-xs px-3 py-1 rounded border transition-colors disabled:opacity-50 ${
+          isPublic
+            ? 'border-red-500/40 text-red-400 hover:bg-red-500/10'
+            : 'border-green-500/40 text-green-400 hover:bg-green-500/10'
+        }`}
+      >
+        {isPublic ? 'Make Private' : 'Make Public'}
+      </button>
     </div>
   );
 }

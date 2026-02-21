@@ -11,6 +11,7 @@ const PRIORITY_OPTIONS = [
 
 const TASK_TYPES = [
   { value: 'custom', label: '📝 Custom' },
+  { value: 'move', label: '🚀 Move' },
   { value: 'escort', label: '🛡️ Escort' },
   { value: 'intercept', label: '⚔️ Intercept' },
   { value: 'recon', label: '👁️ Recon' },
@@ -39,7 +40,7 @@ const ROE_OPTIONS = [
  * Create new task / order form
  */
 export default function TaskForm({ missionId, onClose }) {
-  const { units, groups, contacts, tasks } = useMissionStore();
+  const { units, groups, contacts, tasks, operationPhases, operations } = useMissionStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskType, setTaskType] = useState('custom');
@@ -54,7 +55,26 @@ export default function TaskForm({ missionId, onClose }) {
   const [startAt, setStartAt] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [dependsOn, setDependsOn] = useState('');
+  const [startNow, setStartNow] = useState(false);
+  const [phaseId, setPhaseId] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // When a contact is selected, auto-fill position
+  const handleContactChange = (contactId) => {
+    setTargetContact(contactId);
+    if (contactId) {
+      const c = contacts.find((con) => con.id === contactId);
+      if (c) {
+        setTargetX(c.pos_x?.toString() || '');
+        setTargetY(c.pos_y?.toString() || '');
+        setTargetZ(c.pos_z?.toString() || '');
+      }
+    }
+  };
+
+  // Active operation phases for phase picker
+  const activeOp = operations.find((o) => o.phase !== 'complete');
+  const phases = activeOp ? operationPhases.filter((p) => p.operation_id === activeOp.id).sort((a, b) => a.sort_order - b.sort_order) : [];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -75,9 +95,10 @@ export default function TaskForm({ missionId, onClose }) {
         target_x: targetX !== '' ? parseFloat(targetX) : null,
         target_y: targetY !== '' ? parseFloat(targetY) : null,
         target_z: targetZ !== '' ? parseFloat(targetZ) : null,
-        start_at: startAt ? new Date(startAt).toISOString() : null,
+        start_at: startNow ? new Date().toISOString() : (startAt ? new Date(startAt).toISOString() : null),
         due_at: dueAt ? new Date(dueAt).toISOString() : null,
         depends_on: dependsOn || null,
+        phase_id: phaseId || null,
       };
 
       const res = await fetch('/api/tasks', {
@@ -173,26 +194,51 @@ export default function TaskForm({ missionId, onClose }) {
       </div>
 
       {/* Scheduling */}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">Start At</label>
-          <input
-            type="datetime-local"
-            value={startAt}
-            onChange={(e) => setStartAt(e.target.value)}
-            className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">Due At</label>
-          <input
-            type="datetime-local"
-            value={dueAt}
-            onChange={(e) => setDueAt(e.target.value)}
-            className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
-          />
-        </div>
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+          <input type="checkbox" checked={startNow} onChange={(e) => { setStartNow(e.target.checked); if (e.target.checked) setStartAt(''); }} className="rounded" />
+          Start Now
+        </label>
+        {!startNow && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Start At</label>
+              <input
+                type="datetime-local"
+                value={startAt}
+                onChange={(e) => setStartAt(e.target.value)}
+                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Due At</label>
+              <input
+                type="datetime-local"
+                value={dueAt}
+                onChange={(e) => setDueAt(e.target.value)}
+                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+              />
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Phase Picker (if operation running) */}
+      {phases.length > 0 && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Operation Phase</label>
+          <select
+            value={phaseId}
+            onChange={(e) => setPhaseId(e.target.value)}
+            className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+          >
+            <option value="">— No Phase —</option>
+            {phases.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Dependency */}
       {tasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length > 0 && (
@@ -247,7 +293,7 @@ export default function TaskForm({ missionId, onClose }) {
           <label className="text-xs text-gray-500 block mb-1">Target Contact</label>
           <select
             value={targetContact}
-            onChange={(e) => setTargetContact(e.target.value)}
+            onChange={(e) => handleContactChange(e.target.value)}
             className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
           >
             <option value="">— None —</option>

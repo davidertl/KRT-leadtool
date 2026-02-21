@@ -15,7 +15,7 @@ const { valkey } = require('./db/valkey');
 // Route imports
 const healthRoutes = require('./routes/health');
 const authRoutes = require('./routes/auth');
-const teamsRoutes = require('./routes/teams');   // missions (file kept as teams.js)
+const missionsRoutes = require('./routes/missions');   
 const unitsRoutes = require('./routes/units');
 const groupsRoutes = require('./routes/groups');
 const waypointsRoutes = require('./routes/waypoints');
@@ -30,6 +30,9 @@ const eventsRoutes = require('./routes/events');
 const messagesRoutes = require('./routes/messages');
 const bookmarksRoutes = require('./routes/bookmarks');
 const membersRoutes = require('./routes/members');
+const operationPhasesRoutes = require('./routes/operationPhases');
+const operationRoeRoutes = require('./routes/operationRoe');
+const operationNotesRoutes = require('./routes/operationNotes');
 
 // Passport config
 require('./auth/discord');
@@ -67,7 +70,7 @@ app.use(passport.session());
 // ---- Routes ----
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/missions', teamsRoutes);
+app.use('/api/missions', missionsRoutes);
 app.use('/api/units', unitsRoutes);
 app.use('/api/groups', groupsRoutes);
 app.use('/api/waypoints', waypointsRoutes);
@@ -82,6 +85,9 @@ app.use('/api/events', eventsRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/bookmarks', bookmarksRoutes);
 app.use('/api/members', membersRoutes);
+app.use('/api/operation-phases', operationPhasesRoutes);
+app.use('/api/operation-roe', operationRoeRoutes);
+app.use('/api/operation-notes', operationNotesRoutes);
 
 // ---- Error handler ----
 app.use((err, req, res, _next) => {

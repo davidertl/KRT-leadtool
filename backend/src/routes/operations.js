@@ -7,6 +7,7 @@ const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
 const { requireMissionMember } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
+const { insertEventLog } = require('../helpers/eventLog');
 const { z } = require('zod');
 const { validate } = require('../validation/middleware');
 
@@ -65,6 +66,7 @@ router.post('/', requireAuth, validate(createOp), requireMissionMember, async (r
     );
 
     broadcastToMission(mission_id, 'operation:created', result.rows[0]);
+    await insertEventLog({ mission_id, operation_id: result.rows[0].id, event_type: 'op_created', message: `Operation "${name}" created`, user_id: req.user.id });
     res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
 });
@@ -108,8 +110,18 @@ router.put('/:id', requireAuth, validate(updateOp), async (req, res, next) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Operation not found' });
 
-    broadcastToMission(result.rows[0].mission_id, 'operation:updated', result.rows[0]);
-    res.json(result.rows[0]);
+    const op = result.rows[0];
+    broadcastToMission(op.mission_id, 'operation:updated', op);
+
+    // Auto-log phase and ROE changes
+    if (req.body.phase) {
+      await insertEventLog({ mission_id: op.mission_id, operation_id: op.id, event_type: 'phase_change', message: `Phase changed to ${req.body.phase}`, user_id: req.user.id });
+    }
+    if (req.body.roe) {
+      await insertEventLog({ mission_id: op.mission_id, operation_id: op.id, event_type: 'roe_changed', message: `ROE changed to ${req.body.roe}`, user_id: req.user.id });
+    }
+
+    res.json(op);
   } catch (err) { next(err); }
 });
 

@@ -61,6 +61,50 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
       [mission_id, sinceDate]
     );
 
+    // Fetch operations
+    const operations = await query(
+      `SELECT * FROM operations WHERE mission_id = $1 AND updated_at > $2 ORDER BY updated_at ASC`,
+      [mission_id, sinceDate]
+    );
+
+    // Fetch operation_phases for active operations
+    const opIds = operations.rows.map(o => o.id);
+    let operationPhases = { rows: [] };
+    let operationRoe = { rows: [] };
+    let operationNotes = { rows: [] };
+    if (opIds.length > 0) {
+      operationPhases = await query(
+        `SELECT * FROM operation_phases WHERE operation_id = ANY($1) ORDER BY sort_order ASC`,
+        [opIds]
+      );
+      operationRoe = await query(
+        `SELECT * FROM operation_roe WHERE operation_id = ANY($1)`,
+        [opIds]
+      );
+      operationNotes = await query(
+        `SELECT * FROM operation_notes WHERE operation_id = ANY($1) ORDER BY created_at ASC`,
+        [opIds]
+      );
+    }
+
+    // Fetch recent events
+    const events = await query(
+      `SELECT * FROM event_log WHERE mission_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 200`,
+      [mission_id, sinceDate]
+    );
+
+    // Fetch messages
+    const messages = await query(
+      `SELECT * FROM quick_messages WHERE mission_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 200`,
+      [mission_id, sinceDate]
+    );
+
+    // Fetch bookmarks
+    const bookmarks = await query(
+      `SELECT * FROM bookmarks WHERE mission_id = $1 AND (is_shared = true OR user_id = $3)`,
+      [mission_id, sinceDate, req.user.id]
+    );
+
     res.json({
       server_time: new Date().toISOString(),
       units: units.rows,
@@ -69,6 +113,13 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
       history: history.rows,
       contacts: contacts.rows,
       tasks: tasks.rows,
+      operations: operations.rows,
+      operationPhases: operationPhases.rows,
+      operationRoe: operationRoe.rows,
+      operationNotes: operationNotes.rows,
+      events: events.rows,
+      messages: messages.rows,
+      bookmarks: bookmarks.rows,
     });
   } catch (err) { next(err); }
 });

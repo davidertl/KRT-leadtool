@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useMissionStore } from '../stores/missionStore';
 import toast from 'react-hot-toast';
 
@@ -32,14 +32,22 @@ function formatTimer(seconds) {
 }
 
 /**
- * Operation panel — create/manage operations with phase management and timer
+ * Operation panel — create/manage operations with phase management, ROE, and notes
  */
 export default function OperationPanel({ missionId }) {
   const { operations } = useMissionStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [draftPhases, setDraftPhases] = useState([]);
+  const [draftPhaseName, setDraftPhaseName] = useState('');
   const activeOp = operations.find((o) => o.phase !== 'complete');
+
+  const addDraftPhase = () => {
+    if (!draftPhaseName.trim()) return;
+    setDraftPhases((p) => [...p, { name: draftPhaseName.trim(), phase_type: 'custom', sort_order: p.length }]);
+    setDraftPhaseName('');
+  };
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -52,10 +60,23 @@ export default function OperationPanel({ missionId }) {
         body: JSON.stringify({ mission_id: missionId, name: newName.trim(), description: newDesc || null }),
       });
       if (!res.ok) throw new Error('Failed');
+      const created = await res.json();
+
+      // Create draft phases in bulk
+      for (const dp of draftPhases) {
+        await fetch('/api/operation-phases', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ operation_id: created.id, ...dp }),
+        });
+      }
+
       toast.success('Operation created');
       setShowCreate(false);
       setNewName('');
       setNewDesc('');
+      setDraftPhases([]);
     } catch {
       toast.error('Failed to create operation');
     }
@@ -93,14 +114,42 @@ export default function OperationPanel({ missionId }) {
             rows={2}
             className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent resize-none"
           />
+
+          {/* Inline phase editor during creation */}
+          <div className="border border-krt-border rounded p-2 space-y-1">
+            <label className="text-xs text-gray-500">Phases (optional)</label>
+            {draftPhases.map((dp, i) => (
+              <div key={i} className="flex items-center gap-1 text-xs">
+                <span className="text-gray-400 w-5">{i + 1}.</span>
+                <span className="text-white flex-1">{dp.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setDraftPhases((p) => p.filter((_, idx) => idx !== i))}
+                  className="text-red-500 text-[10px] hover:text-red-400"
+                >✕</button>
+              </div>
+            ))}
+            <div className="flex gap-1">
+              <input
+                type="text"
+                value={draftPhaseName}
+                onChange={(e) => setDraftPhaseName(e.target.value)}
+                placeholder="Phase name…"
+                className="flex-1 bg-krt-panel border border-krt-border rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent"
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDraftPhase(); } }}
+              />
+              <button type="button" onClick={addDraftPhase} className="text-krt-accent text-xs px-2">+ Add</button>
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <button type="submit" className="bg-krt-accent text-white text-sm px-3 py-1 rounded">Create</button>
-            <button type="button" onClick={() => setShowCreate(false)} className="text-gray-400 text-sm px-3 py-1">Cancel</button>
+            <button type="button" onClick={() => { setShowCreate(false); setDraftPhases([]); }} className="text-gray-400 text-sm px-3 py-1">Cancel</button>
           </div>
         </form>
       )}
 
-      {activeOp && <ActiveOperation op={activeOp} />}
+      {activeOp && <ActiveOperation op={activeOp} missionId={missionId} />}
 
       {/* Past operations */}
       {operations.filter((o) => o.phase === 'complete').length > 0 && (
@@ -120,12 +169,31 @@ export default function OperationPanel({ missionId }) {
   );
 }
 
-function ActiveOperation({ op }) {
+function ActiveOperation({ op, missionId }) {
+  const { operationPhases, operationRoe, operationNotes, units, groups,
+    setOperationPhases, setOperationRoe, setOperationNotes } = useMissionStore();
   const [timer, setTimer] = useState(op.timer_seconds || 0);
   const timerRef = useRef(null);
+  const [tab, setTab] = useState('main'); // main | phases | roe | notes
   const currentPhase = PHASES.find((p) => p.value === op.phase);
-  const currentRoe = ROE_OPTIONS.find((r) => r.value === op.roe);
   const phaseIdx = PHASES.findIndex((p) => p.value === op.phase);
+
+  /* Fetch child data on mount */
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [ph, roe, notes] = await Promise.all([
+          fetch(`/api/operation-phases?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()),
+          fetch(`/api/operation-roe?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()),
+          fetch(`/api/operation-notes?operation_id=${op.id}`, { credentials: 'include' }).then((r) => r.json()),
+        ]);
+        setOperationPhases(ph);
+        setOperationRoe(roe);
+        setOperationNotes(notes);
+      } catch { /* ignore */ }
+    };
+    load();
+  }, [op.id]);
 
   // Timer countdown
   useEffect(() => {
@@ -173,9 +241,16 @@ function ActiveOperation({ op }) {
     updateOp({ timer_seconds: min * 60, timer_running: true });
   };
 
+  const TABS = [
+    { key: 'main', label: '⚙️ Main' },
+    { key: 'phases', label: `📋 Phases (${operationPhases.length})` },
+    { key: 'roe', label: '🎯 ROE' },
+    { key: 'notes', label: `📝 Notes (${operationNotes.length})` },
+  ];
+
   return (
     <div className="space-y-3">
-      {/* Op name & phase */}
+      {/* Op name & phase header */}
       <div className="p-3 rounded-lg border" style={{ borderColor: currentPhase?.color + '60', backgroundColor: currentPhase?.color + '10' }}>
         <div className="flex items-center justify-between mb-1">
           <span className="text-white font-bold text-sm">{op.name}</span>
@@ -183,114 +258,400 @@ function ActiveOperation({ op }) {
             {currentPhase?.label || op.phase}
           </span>
         </div>
-        {op.description && (
-          <p className="text-xs text-gray-400 mb-2">{op.description}</p>
-        )}
+        {op.description && <p className="text-xs text-gray-400 mb-2">{op.description}</p>}
         {op.started_at && (
-          <p className="text-[10px] text-gray-600">
-            Started: {new Date(op.started_at).toLocaleTimeString()}
-          </p>
+          <p className="text-[10px] text-gray-600">Started: {new Date(op.started_at).toLocaleTimeString()}</p>
         )}
       </div>
 
-      {/* Phase progression */}
-      <div>
-        <label className="text-xs text-gray-500 block mb-1">Phase</label>
-        <div className="flex gap-0.5 mb-2">
-          {PHASES.map((p, i) => (
-            <div
-              key={p.value}
-              className="h-1.5 flex-1 rounded-full cursor-pointer"
-              style={{ backgroundColor: i <= phaseIdx ? currentPhase?.color : '#1f2937' }}
-              onClick={() => updateOp({ phase: p.value })}
-              title={p.label}
-            />
-          ))}
-        </div>
-        {op.phase !== 'complete' && (
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-krt-border pb-1">
+        {TABS.map((t) => (
           <button
-            onClick={advancePhase}
-            className="text-xs text-krt-accent hover:text-blue-400"
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`text-[10px] px-2 py-1 rounded-t transition-colors ${
+              tab === t.key ? 'text-krt-accent border-b-2 border-krt-accent' : 'text-gray-500 hover:text-gray-300'
+            }`}
           >
-            → Advance to {PHASES[phaseIdx + 1]?.label || 'next'}
+            {t.label}
           </button>
-        )}
+        ))}
       </div>
 
-      {/* Timer */}
-      <div>
-        <label className="text-xs text-gray-500 block mb-1">Phase Timer</label>
-        <div className="flex items-center gap-2">
-          <span className={`text-2xl font-mono font-bold ${timer <= 60 && op.timer_running ? 'text-red-400 animate-pulse' : 'text-white'}`}>
-            {formatTimer(timer)}
-          </span>
-          <div className="flex flex-col gap-1 ml-auto">
-            <div className="flex gap-1">
-              {[5, 10, 15, 30].map((m) => (
+      {tab === 'main' && (
+        <>
+          {/* Phase progression */}
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Phase</label>
+            <div className="flex gap-0.5 mb-2">
+              {PHASES.map((p, i) => (
+                <div
+                  key={p.value}
+                  className="h-1.5 flex-1 rounded-full cursor-pointer"
+                  style={{ backgroundColor: i <= phaseIdx ? currentPhase?.color : '#1f2937' }}
+                  onClick={() => updateOp({ phase: p.value })}
+                  title={p.label}
+                />
+              ))}
+            </div>
+            {op.phase !== 'complete' && (
+              <button onClick={advancePhase} className="text-xs text-krt-accent hover:text-blue-400">
+                → Advance to {PHASES[phaseIdx + 1]?.label || 'next'}
+              </button>
+            )}
+          </div>
+
+          {/* Timer */}
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Phase Timer</label>
+            <div className="flex items-center gap-2">
+              <span className={`text-2xl font-mono font-bold ${timer <= 60 && op.timer_running ? 'text-red-400 animate-pulse' : 'text-white'}`}>
+                {formatTimer(timer)}
+              </span>
+              <div className="flex flex-col gap-1 ml-auto">
+                <div className="flex gap-1">
+                  {[5, 10, 15, 30].map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setTimerMinutes(m)}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-krt-bg border border-krt-border hover:border-krt-accent text-gray-400"
+                    >
+                      {m}m
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => updateOp({ timer_running: !op.timer_running })}
+                    className={`text-[10px] px-2 py-0.5 rounded ${op.timer_running ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}
+                  >
+                    {op.timer_running ? '⏸ Pause' : '▶ Start'}
+                  </button>
+                  <button
+                    onClick={() => updateOp({ timer_seconds: 0, timer_running: false })}
+                    className="text-[10px] px-2 py-0.5 rounded bg-krt-bg text-gray-500"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Global ROE */}
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Global ROE</label>
+            <div className="grid grid-cols-2 gap-1">
+              {ROE_OPTIONS.map((r) => (
                 <button
-                  key={m}
-                  onClick={() => setTimerMinutes(m)}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-krt-bg border border-krt-border hover:border-krt-accent text-gray-400"
+                  key={r.value}
+                  onClick={() => updateOp({ roe: r.value })}
+                  className={`text-[10px] px-2 py-1.5 rounded transition-colors text-left ${
+                    op.roe === r.value
+                      ? 'text-white border-2'
+                      : 'bg-krt-bg text-gray-400 border border-krt-border hover:text-white'
+                  }`}
+                  style={op.roe === r.value ? { backgroundColor: r.color + '20', borderColor: r.color } : {}}
                 >
-                  {m}m
+                  <div className="font-bold">{r.label}</div>
+                  <div className="text-gray-500">{r.desc}</div>
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Delete */}
+          <button
+            onClick={async () => {
+              if (!confirm('Delete this operation?')) return;
+              try {
+                await fetch(`/api/operations/${op.id}`, { method: 'DELETE', credentials: 'include' });
+                toast.success('Operation deleted');
+              } catch { toast.error('Failed'); }
+            }}
+            className="text-xs text-red-500 hover:text-red-400"
+          >
+            Delete Operation
+          </button>
+        </>
+      )}
+
+      {tab === 'phases' && <PhasesTab opId={op.id} phases={operationPhases} />}
+      {tab === 'roe' && <EntityRoeTab opId={op.id} roe={operationRoe} units={units} groups={groups} globalRoe={op.roe} />}
+      {tab === 'notes' && <NotesTab opId={op.id} notes={operationNotes} phases={operationPhases} />}
+    </div>
+  );
+}
+
+/* ─── Phases Tab ───────────────────────────────────────── */
+function PhasesTab({ opId, phases }) {
+  const [newName, setNewName] = useState('');
+  const { addOperationPhase, updateOperationPhase, removeOperationPhase } = useMissionStore();
+
+  const createPhase = async () => {
+    if (!newName.trim()) return;
+    try {
+      const res = await fetch('/api/operation-phases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ operation_id: opId, name: newName.trim(), phase_type: 'custom', sort_order: phases.length }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      setNewName('');
+    } catch { toast.error('Failed to add phase'); }
+  };
+
+  const toggleStart = async (phase) => {
+    const now = new Date().toISOString();
+    const data = phase.actual_start ? { actual_start: null } : { actual_start: now };
+    try {
+      const res = await fetch(`/api/operation-phases/${phase.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed');
+    } catch { toast.error('Failed'); }
+  };
+
+  const toggleEnd = async (phase) => {
+    const now = new Date().toISOString();
+    const data = phase.actual_end ? { actual_end: null } : { actual_end: now };
+    try {
+      const res = await fetch(`/api/operation-phases/${phase.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed');
+    } catch { toast.error('Failed'); }
+  };
+
+  const deletePhase = async (id) => {
+    try {
+      await fetch(`/api/operation-phases/${id}`, { method: 'DELETE', credentials: 'include' });
+    } catch { toast.error('Failed'); }
+  };
+
+  return (
+    <div className="space-y-2">
+      {phases.length === 0 && <p className="text-xs text-gray-600 text-center py-2">No phases defined</p>}
+      {phases.map((ph, i) => {
+        const started = !!ph.actual_start;
+        const ended = !!ph.actual_end;
+        return (
+          <div key={ph.id} className={`p-2 rounded border text-xs ${ended ? 'border-green-800/40 bg-green-900/10' : started ? 'border-yellow-700/40 bg-yellow-900/10' : 'border-krt-border bg-krt-bg/30'}`}>
+            <div className="flex items-center gap-1 mb-1">
+              <span className="text-gray-500 w-4">{i + 1}.</span>
+              <span className="text-white font-medium flex-1">{ph.name}</span>
+              <button onClick={() => deletePhase(ph.id)} className="text-red-600 text-[10px] hover:text-red-400">✕</button>
+            </div>
             <div className="flex gap-1">
               <button
-                onClick={() => updateOp({ timer_running: !op.timer_running })}
-                className={`text-[10px] px-2 py-0.5 rounded ${op.timer_running ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}
+                onClick={() => toggleStart(ph)}
+                className={`text-[10px] px-2 py-0.5 rounded ${started ? 'bg-yellow-500/20 text-yellow-400' : 'bg-krt-bg text-gray-500 hover:text-gray-300'}`}
               >
-                {op.timer_running ? '⏸ Pause' : '▶ Start'}
+                {started ? `▶ ${new Date(ph.actual_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '▶ Start'}
               </button>
               <button
-                onClick={() => updateOp({ timer_seconds: 0, timer_running: false })}
-                className="text-[10px] px-2 py-0.5 rounded bg-krt-bg text-gray-500"
+                onClick={() => toggleEnd(ph)}
+                className={`text-[10px] px-2 py-0.5 rounded ${ended ? 'bg-green-500/20 text-green-400' : 'bg-krt-bg text-gray-500 hover:text-gray-300'}`}
               >
-                Reset
+                {ended ? `⏹ ${new Date(ph.actual_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '⏹ End'}
               </button>
             </div>
           </div>
+        );
+      })}
+
+      {/* Add new phase */}
+      <div className="flex gap-1">
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="New phase name…"
+          className="flex-1 bg-krt-bg border border-krt-border rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent"
+          onKeyDown={(e) => { if (e.key === 'Enter') createPhase(); }}
+        />
+        <button onClick={createPhase} className="text-krt-accent text-xs px-2">+ Add</button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Per-Entity ROE Tab ───────────────────────────────── */
+function EntityRoeTab({ opId, roe, units, groups, globalRoe }) {
+  const setEntityRoe = async (targetType, targetId, roeValue) => {
+    try {
+      const res = await fetch('/api/operation-roe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ operation_id: opId, target_type: targetType, target_id: targetId, roe: roeValue }),
+      });
+      if (!res.ok) throw new Error('Failed');
+    } catch { toast.error('Failed to set ROE'); }
+  };
+
+  const removeRoe = async (id) => {
+    try {
+      await fetch(`/api/operation-roe/${id}`, { method: 'DELETE', credentials: 'include' });
+    } catch { toast.error('Failed'); }
+  };
+
+  const globalOpt = ROE_OPTIONS.find((r) => r.value === globalRoe);
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] text-gray-600">
+        Global: <span style={{ color: globalOpt?.color }}>{globalOpt?.label || 'N/A'}</span> — override per unit/group below
+      </p>
+
+      {/* Groups */}
+      {groups.length > 0 && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Groups</label>
+          {groups.map((g) => {
+            const entry = roe.find((r) => r.target_type === 'group' && r.target_id === g.id);
+            return (
+              <div key={g.id} className="flex items-center gap-1 mb-1 text-xs">
+                <span className="text-gray-300 flex-1 truncate">👥 {g.name}</span>
+                <select
+                  value={entry?.roe || ''}
+                  onChange={(e) => {
+                    if (e.target.value) setEntityRoe('group', g.id, e.target.value);
+                    else if (entry) removeRoe(entry.id);
+                  }}
+                  className="bg-krt-bg border border-krt-border rounded px-1 py-0.5 text-[10px] text-white"
+                >
+                  <option value="">Global</option>
+                  {ROE_OPTIONS.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
         </div>
+      )}
+
+      {/* Units */}
+      {units.length > 0 && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Units</label>
+          {units.map((u) => {
+            const entry = roe.find((r) => r.target_type === 'unit' && r.target_id === u.id);
+            const roeOpt = ROE_OPTIONS.find((r) => r.value === entry?.roe);
+            return (
+              <div key={u.id} className="flex items-center gap-1 mb-1 text-xs">
+                <span className="text-gray-300 flex-1 truncate">🚀 {u.callsign || u.name}</span>
+                <select
+                  value={entry?.roe || ''}
+                  onChange={(e) => {
+                    if (e.target.value) setEntityRoe('unit', u.id, e.target.value);
+                    else if (entry) removeRoe(entry.id);
+                  }}
+                  className="bg-krt-bg border border-krt-border rounded px-1 py-0.5 text-[10px] text-white"
+                >
+                  <option value="">Global</option>
+                  {ROE_OPTIONS.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Notes / Debrief Tab ──────────────────────────────── */
+function NotesTab({ opId, notes, phases }) {
+  const [content, setContent] = useState('');
+  const [phaseId, setPhaseId] = useState('');
+  const { addOperationNote, removeOperationNote } = useMissionStore();
+
+  const createNote = async () => {
+    if (!content.trim()) return;
+    try {
+      const res = await fetch('/api/operation-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ operation_id: opId, phase_id: phaseId || null, content: content.trim() }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      setContent('');
+    } catch { toast.error('Failed to add note'); }
+  };
+
+  const deleteNote = async (id) => {
+    try {
+      await fetch(`/api/operation-notes/${id}`, { method: 'DELETE', credentials: 'include' });
+    } catch { toast.error('Failed'); }
+  };
+
+  return (
+    <div className="space-y-2">
+      {/* Note list */}
+      <div className="space-y-1 max-h-48 overflow-y-auto">
+        {notes.length === 0 && <p className="text-xs text-gray-600 text-center py-2">No notes yet</p>}
+        {notes.map((n) => {
+          const ph = phases.find((p) => p.id === n.phase_id);
+          return (
+            <div key={n.id} className="p-2 rounded bg-krt-bg/30 border border-krt-border text-xs">
+              <div className="flex items-center gap-1 mb-0.5">
+                <span className="text-gray-300 font-medium">{n.created_by_name || 'Unknown'}</span>
+                {ph && <span className="text-krt-accent text-[10px]">({ph.name})</span>}
+                <span className="text-gray-700 ml-auto text-[10px]">
+                  {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <button onClick={() => deleteNote(n.id)} className="text-red-600 text-[10px] hover:text-red-400 ml-1">✕</button>
+              </div>
+              <p className="text-gray-400 whitespace-pre-wrap">{n.content}</p>
+            </div>
+          );
+        })}
       </div>
 
-      {/* ROE */}
-      <div>
-        <label className="text-xs text-gray-500 block mb-1">Rules of Engagement</label>
-        <div className="grid grid-cols-2 gap-1">
-          {ROE_OPTIONS.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => updateOp({ roe: r.value })}
-              className={`text-[10px] px-2 py-1.5 rounded transition-colors text-left ${
-                op.roe === r.value
-                  ? 'text-white border-2'
-                  : 'bg-krt-bg text-gray-400 border border-krt-border hover:text-white'
-              }`}
-              style={op.roe === r.value ? { backgroundColor: r.color + '20', borderColor: r.color } : {}}
-            >
-              <div className="font-bold">{r.label}</div>
-              <div className="text-gray-500">{r.desc}</div>
-            </button>
-          ))}
+      {/* Add note */}
+      <div className="space-y-1">
+        {phases.length > 0 && (
+          <select
+            value={phaseId}
+            onChange={(e) => setPhaseId(e.target.value)}
+            className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-krt-accent"
+          >
+            <option value="">General note</option>
+            {phases.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        )}
+        <div className="flex gap-1">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Add a note or debrief entry…"
+            rows={2}
+            className="flex-1 bg-krt-bg border border-krt-border rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent resize-none"
+          />
+          <button
+            onClick={createNote}
+            disabled={!content.trim()}
+            className="bg-krt-accent text-white text-xs px-3 rounded disabled:opacity-50 self-end py-1"
+          >
+            Add
+          </button>
         </div>
       </div>
-
-      {/* Delete */}
-      <button
-        onClick={async () => {
-          if (!confirm('Delete this operation?')) return;
-          try {
-            await fetch(`/api/operations/${op.id}`, { method: 'DELETE', credentials: 'include' });
-            toast.success('Operation deleted');
-          } catch {
-            toast.error('Failed');
-          }
-        }}
-        className="text-xs text-red-500 hover:text-red-400"
-      >
-        Delete Operation
-      </button>
     </div>
   );
 }

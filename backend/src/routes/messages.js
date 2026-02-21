@@ -10,13 +10,15 @@ const { broadcastToMission } = require('../socket');
 const { z } = require('zod');
 const { validate } = require('../validation/middleware');
 
-const MSG_TYPES = ['checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom'];
+const MSG_TYPES = ['checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom', 'under_attack'];
 
 const createMessage = z.object({
   mission_id: z.string().uuid(),
   unit_id: z.string().uuid().optional().nullable(),
   message_type: z.enum(MSG_TYPES),
   message: z.string().max(500).optional().nullable(),
+  recipient_type: z.enum(['all', 'unit', 'group']).optional().nullable(),
+  recipient_id: z.string().uuid().optional().nullable(),
 });
 
 /** GET /api/messages?mission_id=...&limit=50 */
@@ -40,11 +42,11 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
 /** POST /api/messages — send a quick message */
 router.post('/', requireAuth, validate(createMessage), requireMissionMember, async (req, res, next) => {
   try {
-    const { mission_id, unit_id, message_type, message } = req.body;
+    const { mission_id, unit_id, message_type, message, recipient_type, recipient_id } = req.body;
     const result = await query(
-      `INSERT INTO quick_messages (mission_id, user_id, unit_id, message_type, message)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [mission_id, req.user.id, unit_id || null, message_type, message]
+      `INSERT INTO quick_messages (mission_id, user_id, unit_id, message_type, message, recipient_type, recipient_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [mission_id, req.user.id, unit_id || null, message_type, message, recipient_type || null, recipient_id || null]
     );
 
     // Also log to event_log

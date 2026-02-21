@@ -91,7 +91,8 @@ CREATE TYPE task_type AS ENUM (
     'repair',
     'refuel',
     'medevac',
-    'supply_run'
+    'supply_run',
+    'move'
 );
 
 -- Unit type
@@ -182,6 +183,7 @@ CREATE TABLE missions (
     description     TEXT,
     owner_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     join_code       VARCHAR(8) UNIQUE,                -- shareable code for join requests
+    is_public       BOOLEAN NOT NULL DEFAULT false,   -- public missions visible on dashboard
     settings        JSONB DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -200,6 +202,9 @@ CREATE TABLE groups (
     class_type      class_type NOT NULL DEFAULT 'CUSTOM',
     color           VARCHAR(7) DEFAULT '#3B82F6',   -- hex color for map display
     icon            VARCHAR(64) DEFAULT 'default',   -- icon identifier
+    role            VARCHAR(128),                     -- group role e.g. 'Fighter escort'
+    roe             roe_preset DEFAULT 'self_defence',-- group-level ROE
+    vhf_channel     VARCHAR(64),                      -- VHF channel for comms
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -398,6 +403,12 @@ CREATE TABLE tasks (
     -- Optional target contact
     target_contact  UUID REFERENCES contacts(id) ON DELETE SET NULL,
 
+    -- Source spotrep (when task created from a contact/spotrep)
+    source_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+
+    -- Phase linkage (for phase-based scheduling)
+    phase_id        UUID,  -- FK added after operation_phases table creation
+
     -- Scheduling
     start_at        TIMESTAMPTZ,
     due_at          TIMESTAMPTZ,
@@ -430,7 +441,7 @@ CREATE TABLE ship_images (
     fuel_capacity   NUMERIC,                           -- hydrogen fuel capacity
     cargo_capacity  NUMERIC,                           -- cargo capacity in SCU
     hull_hp         NUMERIC,                           -- total hull hit points
-    size_class      NUMERIC,                       -- 'small', 'medium', 'large', 'capital'
+    size_class      NUMERIC,                          -- size class for map scaling (1-10)
     source          VARCHAR(64) DEFAULT 'manual',     -- 'manual', 'sc_wiki', etc.
     source_url      TEXT,                              -- original source URL for attribution
     license         VARCHAR(128) DEFAULT 'CC-BY-NC-SA 4.0',
@@ -577,8 +588,10 @@ CREATE TABLE quick_messages (
     mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     user_id         UUID REFERENCES users(id) ON DELETE SET NULL,
     unit_id         UUID REFERENCES units(id) ON DELETE SET NULL,
-    message_type    VARCHAR(32) NOT NULL,             -- 'checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom'
+    message_type    VARCHAR(32) NOT NULL,             -- 'checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom', 'under_attack'
     message         TEXT,
+    recipient_type  VARCHAR(16),                      -- 'all', 'unit', 'group' (null = all)
+    recipient_id    UUID,                             -- target unit/group id (null when type='all')
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -652,3 +665,57 @@ CREATE TRIGGER trg_operations_updated_at
 
 CREATE TRIGGER trg_bookmarks_updated_at
     BEFORE UPDATE ON bookmarks FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- Operation Phases (relational phase rows with timing)
+-- ============================================================
+CREATE TABLE operation_phases (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    operation_id    UUID NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+    name            VARCHAR(128) NOT NULL,
+    phase_type      op_phase NOT NULL DEFAULT 'phase_1',
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    planned_start   TIMESTAMPTZ,
+    planned_end     TIMESTAMPTZ,
+    actual_start    TIMESTAMPTZ,
+    actual_end      TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_operation_phases_op ON operation_phases(operation_id);
+
+CREATE TRIGGER trg_operation_phases_updated_at
+    BEFORE UPDATE ON operation_phases FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- Add FK from tasks.phase_id to operation_phases
+ALTER TABLE tasks ADD CONSTRAINT fk_tasks_phase FOREIGN KEY (phase_id) REFERENCES operation_phases(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- Operation ROE (per-group/unit/all rules of engagement)
+-- ============================================================
+CREATE TABLE operation_roe (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    operation_id    UUID NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+    target_type     VARCHAR(16) NOT NULL,             -- 'all', 'group', 'unit'
+    target_id       UUID,                             -- NULL for 'all', group_id or unit_id
+    roe             roe_preset NOT NULL DEFAULT 'self_defence',
+    UNIQUE(operation_id, target_type, COALESCE(target_id, '00000000-0000-0000-0000-000000000000'))
+);
+
+CREATE INDEX idx_operation_roe_op ON operation_roe(operation_id);
+
+-- ============================================================
+-- Operation Notes (debrief / phase / task notes)
+-- ============================================================
+CREATE TABLE operation_notes (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    operation_id    UUID NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+    phase_id        UUID REFERENCES operation_phases(id) ON DELETE SET NULL,
+    task_id         UUID REFERENCES tasks(id) ON DELETE SET NULL,
+    content         TEXT NOT NULL,
+    created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_operation_notes_op ON operation_notes(operation_id);

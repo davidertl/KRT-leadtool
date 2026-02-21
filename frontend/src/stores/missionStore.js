@@ -13,6 +13,9 @@ export const useMissionStore = create((set, get) => ({
   contacts: [],
   tasks: [],
   operations: [],
+  operationPhases: [],
+  operationRoe: [],
+  operationNotes: [],
   events: [],
   messages: [],
   bookmarks: [],
@@ -149,6 +152,53 @@ export const useMissionStore = create((set, get) => ({
     operations: s.operations.filter((o) => o.id !== id),
   })),
 
+  // ---- Operation Phases ----
+  setOperationPhases: (operationPhases) => set({ operationPhases }),
+
+  addOperationPhase: (phase) => set((s) => ({
+    operationPhases: [...s.operationPhases.filter((p) => p.id !== phase.id), phase],
+  })),
+
+  updateOperationPhase: (updated) => set((s) => ({
+    operationPhases: s.operationPhases.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
+  })),
+
+  removeOperationPhase: (id) => set((s) => ({
+    operationPhases: s.operationPhases.filter((p) => p.id !== id),
+  })),
+
+  // ---- Operation ROE (per-entity) ----
+  setOperationRoe: (operationRoe) => set({ operationRoe }),
+
+  upsertOperationRoe: (roe) => set((s) => {
+    const existing = s.operationRoe.findIndex((r) => r.id === roe.id);
+    if (existing >= 0) {
+      const updated = [...s.operationRoe];
+      updated[existing] = { ...updated[existing], ...roe };
+      return { operationRoe: updated };
+    }
+    return { operationRoe: [...s.operationRoe, roe] };
+  }),
+
+  removeOperationRoe: (id) => set((s) => ({
+    operationRoe: s.operationRoe.filter((r) => r.id !== id),
+  })),
+
+  // ---- Operation Notes ----
+  setOperationNotes: (operationNotes) => set({ operationNotes }),
+
+  addOperationNote: (note) => set((s) => ({
+    operationNotes: [...s.operationNotes, note],
+  })),
+
+  updateOperationNote: (updated) => set((s) => ({
+    operationNotes: s.operationNotes.map((n) => (n.id === updated.id ? { ...n, ...updated } : n)),
+  })),
+
+  removeOperationNote: (id) => set((s) => ({
+    operationNotes: s.operationNotes.filter((n) => n.id !== id),
+  })),
+
   // ---- Events ----
   setEvents: (events) => set({ events }),
 
@@ -168,6 +218,10 @@ export const useMissionStore = create((set, get) => ({
 
   addBookmark: (bm) => set((s) => ({
     bookmarks: [...s.bookmarks.filter((b) => b.id !== bm.id), bm],
+  })),
+
+  updateBookmark: (updated) => set((s) => ({
+    bookmarks: s.bookmarks.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)),
   })),
 
   removeBookmark: (id) => set((s) => ({
