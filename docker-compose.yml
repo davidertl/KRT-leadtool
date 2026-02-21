@@ -10,7 +10,7 @@ services:
     image: nginx:alpine
     container_name: krt-nginx
     restart: unless-stopped
-    entrypoint: ["/custom-entrypoint.sh"]
+    entrypoint: ["/bin/sh", "/custom-entrypoint.sh"]
     command: ["nginx", "-g", "daemon off;"]
     ports:
       - "80:80"
@@ -19,8 +19,8 @@ services:
       - DOMAIN=${DOMAIN}
     volumes:
       - ./nginx/docker-entrypoint.sh:/custom-entrypoint.sh:ro
-      - ./nginx/default-http.conf:/etc/nginx/templates/http-only.conf:ro
-      - ./nginx/default-ssl.conf:/etc/nginx/templates/ssl.conf.template:ro
+      - ./nginx/default-http.conf:/etc/nginx/krt-templates/http-only.conf:ro
+      - ./nginx/default-ssl.conf:/etc/nginx/krt-templates/ssl.conf.template:ro
       - certbot-webroot:/var/www/certbot:ro
       - certbot-certs:/etc/letsencrypt
       - frontend-build:/usr/share/nginx/html:ro
@@ -165,7 +165,7 @@ services:
     networks:
       - krt-internal
     healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
