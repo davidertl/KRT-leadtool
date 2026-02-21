@@ -5,6 +5,7 @@
 const { Server } = require('socket.io');
 const { verifyToken } = require('./auth/jwt');
 const { valkey } = require('./db/valkey');
+const { query } = require('./db/postgres');
 
 let io = null;
 
@@ -40,7 +41,7 @@ function initSocketIO(httpServer) {
     console.log(`[KRT] Socket connected: ${socket.user.username} (${socket.id})`);
 
     // Join mission room
-    socket.on('mission:join', (missionId) => {
+    socket.on('mission:join', async (missionId) => {
       socket.join(`mission:${missionId}`);
       console.log(`[KRT] ${socket.user.username} joined mission:${missionId}`);
 
@@ -50,6 +51,16 @@ function initSocketIO(httpServer) {
         socketId: socket.id,
         joinedAt: new Date().toISOString(),
       })).catch(() => {});
+
+      // Log login event
+      try {
+        const result = await query(
+          `INSERT INTO event_log (mission_id, user_id, event, title)
+           VALUES ($1, $2, 'login', $3) RETURNING *`,
+          [missionId, socket.user.id, `${socket.user.username} logged in`]
+        );
+        broadcastToMission(missionId, 'event:created', result.rows[0]);
+      } catch (e) { console.error('[KRT] Login event log error:', e.message); }
 
       // Broadcast updated online list
       broadcastOnlineUsers(missionId);
@@ -90,12 +101,21 @@ function initSocketIO(httpServer) {
     socket.on('disconnect', () => {
       console.log(`[KRT] Socket disconnected: ${socket.user.username} (${socket.id})`);
 
-      // Remove from all mission rooms' online lists
+      // Remove from all mission rooms' online lists and log logout events
       socket.rooms.forEach((room) => {
         if (room.startsWith('mission:')) {
           const missionId = room.replace('mission:', '');
           valkey.hdel(`online:${missionId}`, socket.user.id).catch(() => {});
           broadcastOnlineUsers(missionId);
+
+          // Log logout event
+          query(
+            `INSERT INTO event_log (mission_id, user_id, event, title)
+             VALUES ($1, $2, 'logout', $3) RETURNING *`,
+            [missionId, socket.user.id, `${socket.user.username} logged out`]
+          ).then((result) => {
+            broadcastToMission(missionId, 'event:created', result.rows[0]);
+          }).catch((e) => console.error('[KRT] Logout event log error:', e.message));
         }
       });
     });

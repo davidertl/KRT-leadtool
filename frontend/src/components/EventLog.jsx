@@ -1,25 +1,28 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useMissionStore } from '../stores/missionStore';
 import toast from 'react-hot-toast';
 
-const EVENT_ICONS = {
-  contact: '📡',
-  kill: '💀',
-  loss: '💔',
-  rescue: '🚑',
-  task_update: '📋',
-  position_report: '📍',
-  intel: '🔍',
-  check_in: '✅',
-  check_out: '🚪',
-  phase_change: '⚡',
-  phase_created: '📋',
-  phase_updated: '📋',
-  roe_changed: '🎯',
-  alert: '🚨',
-  custom: '📝',
-};
+const EVENT_TYPES = [
+  { value: 'contact',         icon: '📡', label: 'Contact' },
+  { value: 'kill',            icon: '💀', label: 'Kill' },
+  { value: 'loss',            icon: '💔', label: 'Loss' },
+  { value: 'rescue',          icon: '🚑', label: 'Rescue' },
+  { value: 'task_update',     icon: '📋', label: 'Task' },
+  { value: 'position_report', icon: '📍', label: 'Position' },
+  { value: 'intel',           icon: '🔍', label: 'Intel' },
+  { value: 'login',           icon: '🟢', label: 'Login' },
+  { value: 'logout',          icon: '🔴', label: 'Logout' },
+  { value: 'phase_change',    icon: '⚡', label: 'Phase Change' },
+  { value: 'phase_created',   icon: '📋', label: 'Phase Created' },
+  { value: 'phase_deleted',   icon: '🗑️', label: 'Phase Deleted' },
+  { value: 'op_created',      icon: '🎖️', label: 'Op Created' },
+  { value: 'roe_changed',     icon: '🎯', label: 'ROE Changed' },
+  { value: 'status_change',   icon: '🔄', label: 'Status Change' },
+  { value: 'alert',           icon: '🚨', label: 'Alert' },
+  { value: 'custom',          icon: '📝', label: 'Custom' },
+];
 
+const EVENT_ICONS = Object.fromEntries(EVENT_TYPES.map((t) => [t.value, t.icon]));
 const EVENT_COLORS = {
   contact: 'border-purple-500/30',
   kill: 'border-red-500/30',
@@ -28,17 +31,22 @@ const EVENT_COLORS = {
   task_update: 'border-blue-500/30',
   position_report: 'border-gray-500/30',
   intel: 'border-cyan-500/30',
-  check_in: 'border-green-400/30',
-  check_out: 'border-yellow-500/30',
+  login: 'border-green-400/30',
+  logout: 'border-yellow-500/30',
   phase_change: 'border-amber-500/30',
   phase_created: 'border-amber-400/30',
-  phase_updated: 'border-amber-400/30',
+  phase_deleted: 'border-red-400/30',
+  op_created: 'border-blue-400/30',
   roe_changed: 'border-orange-500/30',
+  status_change: 'border-teal-400/30',
   alert: 'border-red-400/30',
   custom: 'border-gray-400/30',
 };
 
-const EVENT_TYPE_OPTIONS = Object.keys(EVENT_ICONS);
+/* Manual-entry event types (subset for dropdown) */
+const MANUAL_EVENT_TYPES = EVENT_TYPES.filter(
+  (t) => !['login', 'logout', 'phase_change', 'phase_created', 'phase_deleted', 'op_created', 'roe_changed', 'status_change'].includes(t.value)
+);
 
 function timeAgo(dateStr) {
   const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -54,9 +62,11 @@ function timeAgo(dateStr) {
 export default function EventLog({ missionId }) {
   const { events, units } = useMissionStore();
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
+  const [activeTypes, setActiveTypes] = useState(new Set(EVENT_TYPES.map((t) => t.value))); // all checked by default
   const [unitFilter, setUnitFilter] = useState('');
   const [showManual, setShowManual] = useState(false);
+  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
+  const typeDropdownRef = useRef(null);
 
   /* Manual entry state */
   const [manualType, setManualType] = useState('custom');
@@ -64,10 +74,36 @@ export default function EventLog({ missionId }) {
   const [manualDetails, setManualDetails] = useState('');
   const [manualUnit, setManualUnit] = useState('');
 
+  /* Close type dropdown on outside click */
+  useEffect(() => {
+    const handler = (e) => {
+      if (typeDropdownRef.current && !typeDropdownRef.current.contains(e.target)) {
+        setShowTypeDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const toggleType = (value) => {
+    setActiveTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  };
+
+  const selectAllTypes = () => setActiveTypes(new Set(EVENT_TYPES.map((t) => t.value)));
+  const selectNoneTypes = () => setActiveTypes(new Set());
+
   /* Filtered events */
   const filtered = useMemo(() => {
     let list = events;
-    if (typeFilter) list = list.filter((e) => e.event === typeFilter || e.event_type === typeFilter);
+    // Type filter — check both 'event' and 'event_type' fields (legacy support)
+    if (activeTypes.size < EVENT_TYPES.length) {
+      list = list.filter((e) => activeTypes.has(e.event) || activeTypes.has(e.event_type));
+    }
     if (unitFilter) list = list.filter((e) => e.unit_id === unitFilter);
     if (search) {
       const q = search.toLowerCase();
@@ -78,12 +114,11 @@ export default function EventLog({ missionId }) {
       );
     }
     return list;
-  }, [events, typeFilter, unitFilter, search]);
+  }, [events, activeTypes, unitFilter, search]);
 
   const handleExport = async () => {
     try {
       const params = new URLSearchParams({ mission_id: missionId });
-      if (typeFilter) params.set('event_type', typeFilter);
       if (unitFilter) params.set('unit_id', unitFilter);
       if (search) params.set('search', search);
       const res = await fetch(`/api/events/export?${params}`, { credentials: 'include' });
@@ -111,7 +146,7 @@ export default function EventLog({ missionId }) {
         credentials: 'include',
         body: JSON.stringify({
           mission_id: missionId,
-          event_type: manualType,
+          event: manualType,
           title: manualTitle.trim(),
           details: manualDetails || null,
           unit_id: manualUnit || null,
@@ -139,16 +174,45 @@ export default function EventLog({ missionId }) {
           placeholder="🔍 Search…"
           className="flex-1 min-w-[100px] bg-krt-bg border border-krt-border rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent"
         />
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="bg-krt-bg border border-krt-border rounded px-1 py-1 text-xs text-white"
-        >
-          <option value="">All types</option>
-          {EVENT_TYPE_OPTIONS.map((t) => (
-            <option key={t} value={t}>{EVENT_ICONS[t]} {t}</option>
-          ))}
-        </select>
+
+        {/* Multi-select type dropdown */}
+        <div className="relative" ref={typeDropdownRef}>
+          <button
+            onClick={() => setShowTypeDropdown((v) => !v)}
+            className="bg-krt-bg border border-krt-border rounded px-2 py-1 text-xs text-white hover:border-krt-accent flex items-center gap-1"
+          >
+            <span>Types</span>
+            <span className="text-[10px] text-gray-500">
+              ({activeTypes.size}/{EVENT_TYPES.length})
+            </span>
+            <span className="text-[10px]">{showTypeDropdown ? '▲' : '▼'}</span>
+          </button>
+          {showTypeDropdown && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-krt-panel border border-krt-border rounded shadow-lg w-48 max-h-64 overflow-y-auto">
+              <div className="flex gap-1 px-2 py-1 border-b border-krt-border">
+                <button onClick={selectAllTypes} className="text-[10px] text-krt-accent hover:underline">All</button>
+                <span className="text-gray-600 text-[10px]">|</span>
+                <button onClick={selectNoneTypes} className="text-[10px] text-gray-400 hover:underline">None</button>
+              </div>
+              {EVENT_TYPES.map((t) => (
+                <label
+                  key={t.value}
+                  className="flex items-center gap-2 px-2 py-1 hover:bg-krt-bg/50 cursor-pointer text-xs text-white"
+                >
+                  <input
+                    type="checkbox"
+                    checked={activeTypes.has(t.value)}
+                    onChange={() => toggleType(t.value)}
+                    className="rounded border-krt-border text-krt-accent focus:ring-0 focus:ring-offset-0"
+                  />
+                  <span>{t.icon}</span>
+                  <span className="truncate">{t.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
         <select
           value={unitFilter}
           onChange={(e) => setUnitFilter(e.target.value)}
@@ -187,8 +251,8 @@ export default function EventLog({ missionId }) {
               onChange={(e) => setManualType(e.target.value)}
               className="bg-krt-panel border border-krt-border rounded px-1 py-1 text-xs text-white"
             >
-              {EVENT_TYPE_OPTIONS.map((t) => (
-                <option key={t} value={t}>{EVENT_ICONS[t]} {t}</option>
+              {MANUAL_EVENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
               ))}
             </select>
             <select

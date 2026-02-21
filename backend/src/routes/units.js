@@ -68,7 +68,7 @@ router.post('/', requireAuth, validate(schemas.createUnit), requireMissionMember
        parent_unit_id || null, role || null, discord_id || null, crew_count || 1, crew_max || null,
        pos_x || 0, pos_y || 0, pos_z || 0, heading || 0,
        fuel ?? 100, ammo ?? 100, hull ?? 100,
-       status || 'ready_for_takeoff', roe || 'self_defence', notes || null]
+       status || 'disabled', roe || 'self_defence', notes || null]
     );
 
     broadcastToMission(mission_id, 'unit:created', result.rows[0]);

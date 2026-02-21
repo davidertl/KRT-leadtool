@@ -318,7 +318,8 @@ export default function UnitDetailPanel({ unitId, onClose }) {
             <div>
               <label className="text-[10px] text-gray-600 block">Crew Max</label>
               <input type="number" min={0} value={editCrewMax} onChange={(e) => setEditCrewMax(e.target.value)}
-                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" />
+                placeholder={vehicleData?.crewMax ? `${vehicleData.crewMax} (API)` : ''}
+                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent" />
             </div>
           </div>
           )}
@@ -388,10 +389,13 @@ export default function UnitDetailPanel({ unitId, onClose }) {
             <div className="text-sm text-gray-300">{unit.unit_type.replace('_', ' ')}</div>
           </div>
         )}
-        {(unit.crew_count != null || unit.crew_max != null) && (
+        {!isPerson && (
           <div>
             <label className="text-[10px] text-gray-600">Crew</label>
-            <div className="text-sm text-gray-300">{unit.crew_count ?? 1}{unit.crew_max ? `/${unit.crew_max}` : ''}</div>
+            <div className="text-sm text-gray-300">
+              {personsAboard.length}
+              {(unit.crew_max || vehicleData?.crewMax) ? `/${unit.crew_max || vehicleData?.crewMax}` : ''}
+            </div>
           </div>
         )}
       </div>

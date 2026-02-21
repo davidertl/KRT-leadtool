@@ -14,7 +14,7 @@ const ROE_VALUES = ['aggressive', 'fire_at_will', 'fire_at_id_target', 'self_def
 
 const upsertRoe = z.object({
   operation_id: z.string().uuid(),
-  target_type: z.enum(['unit', 'group']),
+  target_type: z.enum(['unit', 'group', 'person']),
   target_id: z.string().uuid(),
   roe: z.enum(ROE_VALUES),
 });
@@ -45,7 +45,7 @@ router.post('/', requireAuth, validate(upsertRoe), async (req, res, next) => {
     const result = await query(
       `INSERT INTO operation_roe (operation_id, target_type, target_id, roe)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (operation_id, target_type, target_id)
+       ON CONFLICT (operation_id, target_type, COALESCE(target_id, '00000000-0000-0000-0000-000000000000'))
        DO UPDATE SET roe = EXCLUDED.roe
        RETURNING *`,
       [operation_id, target_type, target_id, roe]

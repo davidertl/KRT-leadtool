@@ -136,7 +136,7 @@ function GroupListItem({ group, unitCount, canEdit }) {
           name: editName.trim(),
           class_type: editClassType,
           color: mType?.color || group.color,
-          vhf_channel: editVhf ? parseInt(editVhf, 10) : null,
+          vhf_channel: editVhf.trim() || null,
           roe: editRoe,
         }),
       });
@@ -193,15 +193,34 @@ function GroupListItem({ group, unitCount, canEdit }) {
 
         {/* VHF Channel */}
         <div>
-          <label className="text-xs text-gray-500 block mb-0.5">VHF Channel</label>
-          <input
-            type="number"
-            min="1" max="99999"
-            value={editVhf}
-            onChange={(e) => setEditVhf(e.target.value)}
-            placeholder="00001–99999"
-            className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent"
-          />
+          <label className="text-xs text-gray-500 block mb-0.5">VHF Channel (MHz)</label>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={editVhf}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^0-9.]/g, '');
+                // Allow at most one dot and max 2 decimal digits
+                const parts = v.split('.');
+                if (parts.length > 2) return;
+                if (parts[0] && parts[0].length > 3) return;
+                if (parts[1] && parts[1].length > 2) return;
+                setEditVhf(v);
+              }}
+              onBlur={() => {
+                if (!editVhf) return;
+                // Format to xxx.xx on blur
+                const num = parseFloat(editVhf);
+                if (!isNaN(num) && num >= 0 && num <= 999.99) {
+                  setEditVhf(num.toFixed(2));
+                }
+              }}
+              placeholder="123.45"
+              className="flex-1 bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent font-mono"
+            />
+            <span className="text-xs text-gray-500">MHz</span>
+          </div>
         </div>
 
         {/* ROE */}
@@ -255,7 +274,10 @@ function GroupListItem({ group, unitCount, canEdit }) {
         <span className="text-sm font-medium">{group.name}</span>
         <span className="text-xs text-gray-500 ml-auto">{unitCount} units</span>
       </div>
-      <div className="text-xs text-gray-500 mt-1">{classType?.label || group.class_type}</div>
+      <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+        <span>{classType?.label || group.class_type}</span>
+        {group.vhf_channel && <span className="font-mono text-krt-accent">{group.vhf_channel} MHz</span>}
+      </div>
     </div>
   );
 }
@@ -307,7 +329,7 @@ function ContactListItem({ contact, inactive }) {
 }
 
 /* ─── TaskListItem ─────────────────── */
-function TaskListItem({ task, completed }) {
+function TaskListItem({ task, completed, onEdit }) {
   const handleStatusChange = async (newStatus) => {
     try {
       const res = await fetch(`/api/tasks/${task.id}`, {
@@ -316,6 +338,15 @@ function TaskListItem({ task, completed }) {
       });
       if (res.ok) { useMissionStore.getState().updateTask(await res.json()); toast.success(`Task → ${newStatus}`); }
     } catch { toast.error('Failed to update task'); }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Delete this task?')) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE', credentials: 'include' });
+      if (res.ok) toast.success('Task deleted');
+      else toast.error('Failed to delete task');
+    } catch { toast.error('Failed to delete task'); }
   };
 
   const priorityColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal;
@@ -330,7 +361,15 @@ function TaskListItem({ task, completed }) {
             <span className="text-[10px] text-gray-400 bg-krt-bg px-1 rounded">{task.task_type}</span>
           )}
         </div>
-        <span className="text-xs text-gray-500">{task.status}</span>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-500">{task.status}</span>
+          {!completed && onEdit && (
+            <button onClick={() => onEdit(task)} className="text-[10px] text-krt-accent hover:text-blue-400" title="Edit task">✏️</button>
+          )}
+          {!completed && (
+            <button onClick={handleDelete} className="text-[10px] text-red-600 hover:text-red-400" title="Delete task">🗑️</button>
+          )}
+        </div>
       </div>
       <div className={`text-sm text-white mt-1 ${completed ? 'line-through' : ''}`}>{task.title}</div>
       {task.description && <div className="text-xs text-gray-400 mt-0.5 line-clamp-2">{task.description}</div>}
@@ -715,22 +754,31 @@ function ContactsPopup({ missionId }) {
 function TasksPopup({ missionId }) {
   const { tasks, myMissionRole } = useMissionStore();
   const [showCreate, setShowCreate] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
   const canCreate = myMissionRole === 'gesamtlead' || myMissionRole === 'gruppenlead';
 
   const active = tasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled');
   const done = tasks.filter((t) => t.status === 'completed' || t.status === 'cancelled');
 
+  const handleEdit = (task) => {
+    setShowCreate(false);
+    setEditingTask(task);
+  };
+
   return (
     <PopupWindow id="tasks">
       <div className="space-y-2">
-        {canCreate && (
-          <button onClick={() => setShowCreate(!showCreate)} className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1">+ Create Task</button>
+        {canCreate && !editingTask && (
+          <button onClick={() => { setShowCreate(!showCreate); setEditingTask(null); }} className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1">+ Create Task</button>
         )}
-        {showCreate && <TaskForm missionId={missionId} onClose={() => setShowCreate(false)} />}
-        {active.length === 0 && !showCreate && (
+        {showCreate && !editingTask && <TaskForm missionId={missionId} onClose={() => setShowCreate(false)} />}
+        {editingTask && (
+          <TaskForm missionId={missionId} task={editingTask} onClose={() => setEditingTask(null)} />
+        )}
+        {active.length === 0 && !showCreate && !editingTask && (
           <p className="text-gray-500 text-sm text-center py-4">No active tasks.</p>
         )}
-        {active.map((task) => <TaskListItem key={task.id} task={task} />)}
+        {active.map((task) => <TaskListItem key={task.id} task={task} onEdit={canCreate ? handleEdit : undefined} />)}
         {done.length > 0 && (
           <div className="pt-2 border-t border-krt-border">
             <p className="text-xs text-gray-600 mb-1">Completed ({done.length})</p>

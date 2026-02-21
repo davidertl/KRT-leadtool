@@ -370,9 +370,12 @@ function ActiveOperation({ op, missionId }) {
         credentials: 'include',
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error('Failed');
-    } catch {
-      toast.error('Failed to update operation');
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      toast.error(`Failed to update operation: ${e.message}`);
     }
   };
 
@@ -632,6 +635,9 @@ function PhasesTab({ opId, phases }) {
 /* ─── Per-Entity ROE Tab ───────────────────────────────── */
 function EntityRoeTab({ opId, roe: roeRaw, units, groups, globalRoe }) {
   const roe = Array.isArray(roeRaw) ? roeRaw : [];
+  const vehicleUnits = units.filter((u) => u.unit_type === 'ship' || u.unit_type === 'ground_vehicle');
+  const personUnits = units.filter((u) => u.unit_type === 'person');
+
   const setEntityRoe = async (targetType, targetId, roeValue) => {
     try {
       const res = await fetch('/api/operation-roe', {
@@ -640,8 +646,11 @@ function EntityRoeTab({ opId, roe: roeRaw, units, groups, globalRoe }) {
         credentials: 'include',
         body: JSON.stringify({ operation_id: opId, target_type: targetType, target_id: targetId, roe: roeValue }),
       });
-      if (!res.ok) throw new Error('Failed');
-    } catch { toast.error('Failed to set ROE'); }
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || `HTTP ${res.status}`);
+      }
+    } catch (e) { toast.error(`Failed to set ROE: ${e.message}`); }
   };
 
   const removeRoe = async (id) => {
@@ -652,66 +661,61 @@ function EntityRoeTab({ opId, roe: roeRaw, units, groups, globalRoe }) {
 
   const globalOpt = ROE_OPTIONS.find((r) => r.value === globalRoe);
 
+  const RoeRow = ({ icon, label, targetType, targetId }) => {
+    const entry = roe.find((r) => r.target_type === targetType && r.target_id === targetId);
+    return (
+      <div className="flex items-center gap-1 mb-1 text-xs">
+        <span className="text-gray-300 flex-1 truncate">{icon} {label}</span>
+        <select
+          value={entry?.roe || ''}
+          onChange={(e) => {
+            if (e.target.value) setEntityRoe(targetType, targetId, e.target.value);
+            else if (entry) removeRoe(entry.id);
+          }}
+          className="bg-krt-bg border border-krt-border rounded px-1 py-0.5 text-[10px] text-white"
+        >
+          <option value="">Global</option>
+          {ROE_OPTIONS.map((r) => (
+            <option key={r.value} value={r.value}>{r.label}</option>
+          ))}
+        </select>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3">
       <p className="text-[10px] text-gray-600">
-        Global: <span style={{ color: globalOpt?.color }}>{globalOpt?.label || 'N/A'}</span> — override per unit/group below
+        Global: <span style={{ color: globalOpt?.color }}>{globalOpt?.label || 'N/A'}</span> — override per group/unit/person below
       </p>
 
       {/* Groups */}
       {groups.length > 0 && (
         <div>
           <label className="text-xs text-gray-500 block mb-1">Groups</label>
-          {groups.map((g) => {
-            const entry = roe.find((r) => r.target_type === 'group' && r.target_id === g.id);
-            return (
-              <div key={g.id} className="flex items-center gap-1 mb-1 text-xs">
-                <span className="text-gray-300 flex-1 truncate">👥 {g.name}</span>
-                <select
-                  value={entry?.roe || ''}
-                  onChange={(e) => {
-                    if (e.target.value) setEntityRoe('group', g.id, e.target.value);
-                    else if (entry) removeRoe(entry.id);
-                  }}
-                  className="bg-krt-bg border border-krt-border rounded px-1 py-0.5 text-[10px] text-white"
-                >
-                  <option value="">Global</option>
-                  {ROE_OPTIONS.map((r) => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
-                  ))}
-                </select>
-              </div>
-            );
-          })}
+          {groups.map((g) => (
+            <RoeRow key={g.id} icon="👥" label={g.name} targetType="group" targetId={g.id} />
+          ))}
         </div>
       )}
 
-      {/* Units */}
-      {units.length > 0 && (
+      {/* Units (ships & ground vehicles) */}
+      {vehicleUnits.length > 0 && (
         <div>
           <label className="text-xs text-gray-500 block mb-1">Units</label>
-          {units.map((u) => {
-            const entry = roe.find((r) => r.target_type === 'unit' && r.target_id === u.id);
-            const roeOpt = ROE_OPTIONS.find((r) => r.value === entry?.roe);
-            return (
-              <div key={u.id} className="flex items-center gap-1 mb-1 text-xs">
-                <span className="text-gray-300 flex-1 truncate">🚀 {u.callsign || u.name}</span>
-                <select
-                  value={entry?.roe || ''}
-                  onChange={(e) => {
-                    if (e.target.value) setEntityRoe('unit', u.id, e.target.value);
-                    else if (entry) removeRoe(entry.id);
-                  }}
-                  className="bg-krt-bg border border-krt-border rounded px-1 py-0.5 text-[10px] text-white"
-                >
-                  <option value="">Global</option>
-                  {ROE_OPTIONS.map((r) => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
-                  ))}
-                </select>
-              </div>
-            );
-          })}
+          {vehicleUnits.map((u) => (
+            <RoeRow key={u.id} icon={u.unit_type === 'ground_vehicle' ? '🚗' : '🚀'} label={u.callsign || u.name} targetType="unit" targetId={u.id} />
+          ))}
+        </div>
+      )}
+
+      {/* Persons */}
+      {personUnits.length > 0 && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Persons</label>
+          {personUnits.map((p) => (
+            <RoeRow key={p.id} icon="👤" label={p.callsign || p.name} targetType="person" targetId={p.id} />
+          ))}
         </div>
       )}
     </div>

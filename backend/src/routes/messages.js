@@ -13,12 +13,12 @@ const { validate } = require('../validation/middleware');
 const MSG_TYPES = [
   'checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom', 'under_attack',
   // Status preset types (from Class_setup.md)
-  'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled',
+  'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'damaged', 'disabled',
 ];
 
 /** Status message types that map 1:1 to unit status values */
 const STATUS_MSG_TYPES = new Set([
-  'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled',
+  'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'damaged', 'disabled',
 ]);
 
 const createMessage = z.object({
@@ -53,12 +53,11 @@ router.post('/', requireAuth, validate(createMessage), requireMissionMember, asy
   try {
     const { mission_id, unit_id, message_type, message, recipient_type, recipient_id } = req.body;
 
-    // ── "System" mode: auto-update unit status + ship aggregation ──
-    const isSystem = recipient_type === 'system';
+    // ── Auto-update unit status when a status message is sent ──
     const isStatusMsg = STATUS_MSG_TYPES.has(message_type);
     let updatedUnits = []; // track all units whose status changed (for broadcasting)
 
-    if (isSystem && isStatusMsg && unit_id) {
+    if (isStatusMsg && unit_id) {
       // 1. Update the reporting unit's status
       const unitRes = await query(
         `UPDATE units SET status = $1 WHERE id = $2 RETURNING *`,
@@ -111,12 +110,10 @@ router.post('/', requireAuth, validate(createMessage), requireMissionMember, asy
     // Log to event_log (for system messages, use a descriptive event)
     const unitInfo = unit_id ? (await query('SELECT name, callsign FROM units WHERE id = $1', [unit_id])).rows[0] : null;
     const unitLabel = unitInfo ? (unitInfo.callsign || unitInfo.name) : 'Unknown';
-    const eventTitle = isSystem && isStatusMsg
+    const eventTitle = isStatusMsg
       ? `${unitLabel} status → ${message_type}`
       : `${message_type.toUpperCase()}: ${message || message_type}`;
-    const eventType = isSystem && isStatusMsg ? 'custom'
-      : message_type === 'checkin' ? 'check_in'
-      : message_type === 'checkout' ? 'check_out'
+    const eventType = isStatusMsg ? 'status_change'
       : 'custom';
 
     await query(

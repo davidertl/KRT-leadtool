@@ -13,6 +13,7 @@ export const STATUS_OPTIONS = [
   'ready_for_orders',
   'in_combat',
   'heading_home',
+  'damaged',
   'disabled',
 ];
 
@@ -24,6 +25,7 @@ export const STATUS_COLORS = {
   ready_for_orders: '#eab308',
   in_combat: '#ef4444',
   heading_home: '#f97316',
+  damaged: '#dc2626',
   disabled: '#374151',
 };
 

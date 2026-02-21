@@ -32,7 +32,8 @@ CREATE TYPE unit_status AS ENUM (
     'ready_for_orders', -- Awaiting new orders
     'in_combat',        -- In combat or active operation
     'heading_home',     -- Returning to base
-    'disabled'          -- Damaged / out of action
+    'damaged',          -- Damaged / out of action
+    'disabled'          -- Stored / inactive
 );
 
 CREATE TYPE user_role AS ENUM (
@@ -150,9 +151,14 @@ CREATE TYPE event_type AS ENUM (
     'task_update',
     'position_report',
     'intel',
-    'check_in',
-    'check_out',
+    'login',
+    'logout',
     'phase_change',
+    'phase_created',
+    'phase_deleted',
+    'op_created',
+    'roe_changed',
+    'status_change',
     'alert',
     'custom'
 );
@@ -248,7 +254,7 @@ CREATE TABLE units (
     ammo            INTEGER DEFAULT 100 CHECK (ammo >= 0 AND ammo <= 100),
     hull            INTEGER DEFAULT 100 CHECK (hull >= 0 AND hull <= 100),
 
-    status          unit_status NOT NULL DEFAULT 'ready_for_takeoff',
+    status          unit_status NOT NULL DEFAULT 'disabled',
     roe             roe_preset DEFAULT 'self_defence',
     notes           TEXT,
 

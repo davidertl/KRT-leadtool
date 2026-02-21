@@ -37,26 +37,28 @@ const ROE_OPTIONS = [
 ];
 
 /**
- * Create new task / order form
+ * Create / Edit task form
+ * Pass `task` prop for edit mode, omit for create mode.
  */
-export default function TaskForm({ missionId, onClose }) {
+export default function TaskForm({ missionId, onClose, task: editTask }) {
+  const isEdit = !!editTask;
   const { units, groups, contacts, tasks, operationPhases, operations, navData } = useMissionStore();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [taskType, setTaskType] = useState('custom');
-  const [priority, setPriority] = useState('normal');
-  const [roe, setRoe] = useState('self_defence');
-  const [assignedTo, setAssignedTo] = useState('');
-  const [assignedGroup, setAssignedGroup] = useState('');
-  const [targetContact, setTargetContact] = useState('');
-  const [targetX, setTargetX] = useState('');
-  const [targetY, setTargetY] = useState('');
-  const [targetZ, setTargetZ] = useState('');
-  const [startAt, setStartAt] = useState('');
-  const [dueAt, setDueAt] = useState('');
-  const [dependsOn, setDependsOn] = useState('');
-  const [startNow, setStartNow] = useState(true);
-  const [phaseId, setPhaseId] = useState('');
+  const [title, setTitle] = useState(editTask?.title || '');
+  const [description, setDescription] = useState(editTask?.description || '');
+  const [taskType, setTaskType] = useState(editTask?.task_type || 'custom');
+  const [priority, setPriority] = useState(editTask?.priority || 'normal');
+  const [roe, setRoe] = useState(editTask?.roe || 'self_defence');
+  const [assignedTo, setAssignedTo] = useState(editTask?.assigned_to || '');
+  const [assignedGroup, setAssignedGroup] = useState(editTask?.assigned_group || '');
+  const [targetContact, setTargetContact] = useState(editTask?.target_contact || '');
+  const [targetX, setTargetX] = useState(editTask?.target_x != null ? String(editTask.target_x) : '');
+  const [targetY, setTargetY] = useState(editTask?.target_y != null ? String(editTask.target_y) : '');
+  const [targetZ, setTargetZ] = useState(editTask?.target_z != null ? String(editTask.target_z) : '');
+  const [startAt, setStartAt] = useState(editTask?.start_at ? editTask.start_at.slice(0, 16) : '');
+  const [dueAt, setDueAt] = useState(editTask?.due_at ? editTask.due_at.slice(0, 16) : '');
+  const [dependsOn, setDependsOn] = useState(editTask?.depends_on || '');
+  const [startNow, setStartNow] = useState(isEdit ? false : true);
+  const [phaseId, setPhaseId] = useState(editTask?.phase_id || '');
   const [targetNavPoint, setTargetNavPoint] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -111,7 +113,7 @@ export default function TaskForm({ missionId, onClose }) {
 
     try {
       const payload = {
-        mission_id: missionId,
+        ...(isEdit ? {} : { mission_id: missionId }),
         title: title.trim(),
         description: description || null,
         task_type: taskType,
@@ -129,18 +131,31 @@ export default function TaskForm({ missionId, onClose }) {
         phase_id: phaseId || null,
       };
 
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
+      const url = isEdit ? `/api/tasks/${editTask.id}` : '/api/tasks';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error('Failed to create task');
-      toast.success('Task created');
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || `HTTP ${res.status}`);
+      }
+
+      if (isEdit) {
+        const updated = await res.json();
+        useMissionStore.getState().updateTask(updated);
+        toast.success('Task updated');
+      } else {
+        toast.success('Task created');
+      }
       onClose();
-    } catch {
-      toast.error('Failed to create task');
+    } catch (err) {
+      toast.error(isEdit ? `Failed to update task: ${err.message}` : `Failed to create task: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -150,7 +165,7 @@ export default function TaskForm({ missionId, onClose }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <h4 className="text-sm font-bold text-white">📋 New Task / Order</h4>
+      <h4 className="text-sm font-bold text-white">{isEdit ? '✏️ Edit Task' : '📋 New Task / Order'}</h4>
 
       {/* Title */}
       <input
@@ -398,7 +413,7 @@ export default function TaskForm({ missionId, onClose }) {
           disabled={submitting || !title.trim()}
           className="bg-krt-accent text-white text-sm px-4 py-1.5 rounded disabled:opacity-50"
         >
-          {submitting ? 'Creating…' : 'Create Task'}
+          {submitting ? (isEdit ? 'Saving…' : 'Creating…') : (isEdit ? 'Save Task' : 'Create Task')}
         </button>
         <button type="button" onClick={onClose} className="text-gray-400 text-sm px-3 py-1">
           Cancel

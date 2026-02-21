@@ -12,7 +12,7 @@ const optionalCoordinate = z.number().finite().optional();
 
 // ---- Units ----
 
-const UNIT_STATUSES = ['boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled'];
+const UNIT_STATUSES = ['boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'damaged', 'disabled'];
 const UNIT_TYPES = ['ship', 'ground_vehicle', 'person', 'npc_contact'];
 const ROE_VALUES = ['aggressive', 'fire_at_will', 'fire_at_id_target', 'self_defence', 'dnf'];
 const percentage = z.number().int().min(0).max(100);
@@ -36,7 +36,7 @@ const createUnit = z.object({
   fuel: percentage.default(100),
   ammo: percentage.default(100),
   hull: percentage.default(100),
-  status: z.enum(UNIT_STATUSES).default('ready_for_takeoff'),
+  status: z.enum(UNIT_STATUSES).default('disabled'),
   roe: z.enum(ROE_VALUES).default('self_defence'),
   notes: z.string().max(2000).optional().nullable(),
 });

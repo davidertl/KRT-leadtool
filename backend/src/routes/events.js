@@ -10,7 +10,7 @@ const { broadcastToMission } = require('../socket');
 const { z } = require('zod');
 const { validate } = require('../validation/middleware');
 
-const EVENT_TYPES = ['contact', 'kill', 'loss', 'rescue', 'task_update', 'position_report', 'intel', 'check_in', 'check_out', 'phase_change', 'alert', 'custom'];
+const EVENT_TYPES = ['contact', 'kill', 'loss', 'rescue', 'task_update', 'position_report', 'intel', 'login', 'logout', 'phase_change', 'phase_created', 'phase_deleted', 'op_created', 'roe_changed', 'status_change', 'alert', 'custom'];
 
 const createEvent = z.object({
   mission_id: z.string().uuid(),
@@ -55,7 +55,7 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
     }
     if (search) {
       params.push(`%${search}%`);
-      sql += ` AND (el.title ILIKE $${params.length} OR el.details ILIKE $${params.length} OR el.message ILIKE $${params.length})`;
+      sql += ` AND (el.title ILIKE $${params.length} OR el.details ILIKE $${params.length})`;
     }
 
     sql += ' ORDER BY el.created_at DESC';

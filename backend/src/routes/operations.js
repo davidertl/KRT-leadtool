@@ -119,6 +119,40 @@ router.put('/:id', requireAuth, validate(updateOp), async (req, res, next) => {
     }
     if (req.body.roe) {
       await insertEventLog({ mission_id: op.mission_id, operation_id: op.id, event_type: 'roe_changed', message: `ROE changed to ${req.body.roe}`, user_id: req.user.id });
+
+      // Cascade global ROE to all units/persons that don't have a per-entity override
+      const cascadedUnits = await query(
+        `UPDATE units SET roe = $1
+         WHERE mission_id = $2
+           AND id NOT IN (
+             SELECT target_id FROM operation_roe
+             WHERE operation_id = $3
+               AND target_type IN ('unit', 'person')
+               AND target_id IS NOT NULL
+           )
+         RETURNING *`,
+        [req.body.roe, op.mission_id, op.id]
+      );
+      for (const u of cascadedUnits.rows) {
+        broadcastToMission(op.mission_id, 'unit:updated', u);
+      }
+
+      // Cascade global ROE to all groups that don't have a per-entity override
+      const cascadedGroups = await query(
+        `UPDATE groups SET roe = $1
+         WHERE mission_id = $2
+           AND id NOT IN (
+             SELECT target_id FROM operation_roe
+             WHERE operation_id = $3
+               AND target_type = 'group'
+               AND target_id IS NOT NULL
+           )
+         RETURNING *`,
+        [req.body.roe, op.mission_id, op.id]
+      );
+      for (const g of cascadedGroups.rows) {
+        broadcastToMission(op.mission_id, 'group:updated', g);
+      }
     }
 
     res.json(op);

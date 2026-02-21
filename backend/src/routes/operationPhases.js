@@ -94,7 +94,7 @@ router.put('/:id', requireAuth, validate(updatePhase), async (req, res, next) =>
     const mission_id = opRes.rows[0]?.mission_id;
     if (mission_id) {
       broadcastToMission(mission_id, 'operationPhase:updated', phase);
-      await insertEventLog({ mission_id, operation_id: phase.operation_id, event_type: 'phase_updated', message: `Phase "${phase.name}" updated`, user_id: req.user.id });
+      await insertEventLog({ mission_id, operation_id: phase.operation_id, event_type: 'phase_change', message: `Phase "${phase.name}" updated`, user_id: req.user.id });
     }
 
     res.json(phase);
@@ -112,7 +112,7 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
     const mission_id = opRes.rows[0]?.mission_id;
     if (mission_id) {
       broadcastToMission(mission_id, 'operationPhase:deleted', { id: phase.id, operation_id: phase.operation_id });
-      await insertEventLog({ mission_id, operation_id: phase.operation_id, event_type: 'phase_deleted', message: `Phase "${phase.name}" removed`, user_id: req.user.id });
+      await insertEventLog({ mission_id, operation_id: phase.operation_id, event_type: 'phase_deleted', message: `Phase "${phase.name}" deleted`, user_id: req.user.id });
     }
 
     res.json({ message: 'Phase deleted' });

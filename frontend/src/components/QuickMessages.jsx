@@ -12,7 +12,8 @@ const MSG_BUTTONS = [
   { type: 'ready_for_orders', label: '🎯 Ready for Orders', color: '#10b981', desc: 'Awaiting new orders' },
   { type: 'in_combat', label: '⚔️ In Combat', color: '#ef4444', desc: 'In combat / active operation' },
   { type: 'heading_home', label: '🔙 Heading Home', color: '#f59e0b', desc: 'Returning to base' },
-  { type: 'disabled', label: '💔 Disabled', color: '#dc2626', desc: 'Damaged / out of action' },
+  { type: 'damaged', label: '💥 Damaged', color: '#dc2626', desc: 'Damaged / out of action' },
+  { type: 'disabled', label: '⛔ Disabled', color: '#374151', desc: 'Stored / inactive' },
   { type: 'under_attack', label: '🚨 Under Attack', color: '#991b1b', desc: 'Currently under attack' },
 ];
 
@@ -59,14 +60,10 @@ export default function QuickMessages({ missionId }) {
   /** Status message types that trigger unit-status updates when sent via System */
   const STATUS_MSG_TYPES = new Set([
     'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived',
-    'ready_for_orders', 'in_combat', 'heading_home', 'disabled', 'under_attack',
+    'ready_for_orders', 'in_combat', 'heading_home', 'damaged', 'disabled', 'under_attack',
   ]);
 
   const sendMessage = async (msgType, message) => {
-    // Auto-switch to "system" when sending a status preset (unless explicitly targeting unit/group)
-    const effectiveRecipient =
-      STATUS_MSG_TYPES.has(msgType) && recipientType === 'all' ? 'system' : recipientType;
-
     setSending(true);
     try {
       const res = await fetch('/api/messages', {
@@ -78,8 +75,8 @@ export default function QuickMessages({ missionId }) {
           unit_id: selectedUnit || null,
           message_type: msgType,
           message: message || null,
-          recipient_type: effectiveRecipient,
-          recipient_id: effectiveRecipient !== 'all' && effectiveRecipient !== 'system' && effectiveRecipient !== 'lead'
+          recipient_type: recipientType,
+          recipient_id: recipientType !== 'all' && recipientType !== 'system' && recipientType !== 'lead'
             ? recipientId || null : null,
         }),
       });
