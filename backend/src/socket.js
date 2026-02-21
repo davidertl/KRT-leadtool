@@ -39,34 +39,34 @@ function initSocketIO(httpServer) {
   io.on('connection', (socket) => {
     console.log(`[KRT] Socket connected: ${socket.user.username} (${socket.id})`);
 
-    // Join team room
-    socket.on('team:join', (teamId) => {
-      socket.join(`team:${teamId}`);
-      console.log(`[KRT] ${socket.user.username} joined team:${teamId}`);
+    // Join mission room
+    socket.on('mission:join', (missionId) => {
+      socket.join(`mission:${missionId}`);
+      console.log(`[KRT] ${socket.user.username} joined mission:${missionId}`);
 
       // Publish presence to Valkey
-      valkey.hset(`online:${teamId}`, socket.user.id, JSON.stringify({
+      valkey.hset(`online:${missionId}`, socket.user.id, JSON.stringify({
         username: socket.user.username,
         socketId: socket.id,
         joinedAt: new Date().toISOString(),
       })).catch(() => {});
 
       // Broadcast updated online list
-      broadcastOnlineUsers(teamId);
+      broadcastOnlineUsers(missionId);
     });
 
-    // Leave team room
-    socket.on('team:leave', (teamId) => {
-      socket.leave(`team:${teamId}`);
-      valkey.hdel(`online:${teamId}`, socket.user.id).catch(() => {});
-      broadcastOnlineUsers(teamId);
+    // Leave mission room
+    socket.on('mission:leave', (missionId) => {
+      socket.leave(`mission:${missionId}`);
+      valkey.hdel(`online:${missionId}`, socket.user.id).catch(() => {});
+      broadcastOnlineUsers(missionId);
     });
 
     // Real-time unit position update (for smooth drag)
     socket.on('unit:move', (data) => {
-      // Broadcast to team without persisting (persist on drop via REST)
-      if (data.team_id) {
-        socket.to(`team:${data.team_id}`).emit('unit:moved', {
+      // Broadcast to mission without persisting (persist on drop via REST)
+      if (data.mission_id) {
+        socket.to(`mission:${data.mission_id}`).emit('unit:moved', {
           id: data.id,
           pos_x: data.pos_x,
           pos_y: data.pos_y,
@@ -78,8 +78,8 @@ function initSocketIO(httpServer) {
 
     // Cursor/selection sharing for collaborative awareness
     socket.on('cursor:update', (data) => {
-      if (data.team_id) {
-        socket.to(`team:${data.team_id}`).emit('cursor:updated', {
+      if (data.mission_id) {
+        socket.to(`mission:${data.mission_id}`).emit('cursor:updated', {
           user_id: socket.user.id,
           username: socket.user.username,
           ...data,
@@ -90,12 +90,12 @@ function initSocketIO(httpServer) {
     socket.on('disconnect', () => {
       console.log(`[KRT] Socket disconnected: ${socket.user.username} (${socket.id})`);
 
-      // Remove from all team rooms' online lists
+      // Remove from all mission rooms' online lists
       socket.rooms.forEach((room) => {
-        if (room.startsWith('team:')) {
-          const teamId = room.replace('team:', '');
-          valkey.hdel(`online:${teamId}`, socket.user.id).catch(() => {});
-          broadcastOnlineUsers(teamId);
+        if (room.startsWith('mission:')) {
+          const missionId = room.replace('mission:', '');
+          valkey.hdel(`online:${missionId}`, socket.user.id).catch(() => {});
+          broadcastOnlineUsers(missionId);
         }
       });
     });
@@ -105,30 +105,30 @@ function initSocketIO(httpServer) {
 }
 
 /**
- * Broadcast an event to all connected clients in a team room
+ * Broadcast an event to all connected clients in a mission room
  */
-function broadcastToTeam(teamId, event, data) {
+function broadcastToMission(missionId, event, data) {
   if (io) {
-    io.to(`team:${teamId}`).emit(event, data);
+    io.to(`mission:${missionId}`).emit(event, data);
   }
 }
 
 /**
- * Broadcast the list of online users in a team
+ * Broadcast the list of online users in a mission
  */
-async function broadcastOnlineUsers(teamId) {
+async function broadcastOnlineUsers(missionId) {
   try {
-    const online = await valkey.hgetall(`online:${teamId}`);
+    const online = await valkey.hgetall(`online:${missionId}`);
     const users = Object.entries(online).map(([id, json]) => ({
       id,
       ...JSON.parse(json),
     }));
     if (io) {
-      io.to(`team:${teamId}`).emit('team:online', users);
+      io.to(`mission:${missionId}`).emit('mission:online', users);
     }
   } catch {
     // Ignore errors
   }
 }
 
-module.exports = { initSocketIO, broadcastToTeam };
+module.exports = { initSocketIO, broadcastToMission };

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 /**
  * Bookmarks panel — save and navigate to map locations
  */
-export default function BookmarkPanel({ teamId }) {
+export default function BookmarkPanel({ missionId }) {
   const { bookmarks, focusPosition } = useMissionStore();
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
@@ -24,7 +24,7 @@ export default function BookmarkPanel({ teamId }) {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          team_id: teamId,
+          mission_id: missionId,
           name: name.trim(),
           pos_x: posX,
           pos_y: posY,

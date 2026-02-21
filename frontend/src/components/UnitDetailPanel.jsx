@@ -3,24 +3,25 @@ import { useMissionStore } from '../stores/missionStore';
 import { useShipImage } from '../hooks/useShipImage';
 import toast from 'react-hot-toast';
 
-const STATUS_OPTIONS = ['idle', 'en_route', 'on_station', 'engaged', 'rtb', 'disabled'];
+const STATUS_OPTIONS = ['boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled'];
 
 const STATUS_COLORS = {
-  idle: 'bg-gray-500',
-  en_route: 'bg-blue-500',
-  on_station: 'bg-green-500',
-  engaged: 'bg-red-500',
-  rtb: 'bg-yellow-500',
+  boarding: 'bg-purple-500',
+  ready_for_takeoff: 'bg-blue-500',
+  on_the_way: 'bg-cyan-500',
+  arrived: 'bg-green-500',
+  ready_for_orders: 'bg-yellow-500',
+  in_combat: 'bg-red-500',
+  heading_home: 'bg-orange-500',
   disabled: 'bg-gray-700',
 };
 
 const ROE_LABELS = {
-  weapons_free: { label: 'WEAPONS FREE', color: '#ef4444' },
-  weapons_tight: { label: 'WEAPONS TIGHT', color: '#f59e0b' },
-  weapons_hold: { label: 'WEAPONS HOLD', color: '#22c55e' },
-  defensive: { label: 'DEFENSIVE', color: '#3b82f6' },
   aggressive: { label: 'AGGRESSIVE', color: '#dc2626' },
-  no_fire: { label: 'NO FIRE', color: '#9ca3af' },
+  fire_at_will: { label: 'FIRE AT WILL', color: '#ef4444' },
+  fire_at_id_target: { label: 'FIRE AT ID TARGET', color: '#f59e0b' },
+  self_defence: { label: 'SELF DEFENCE', color: '#22c55e' },
+  dnf: { label: 'DO NOT FIRE', color: '#9ca3af' },
 };
 
 function ResourceBar({ label, value, color, warning = 25 }) {
@@ -59,7 +60,7 @@ export default function UnitDetailPanel({ unitId, onClose }) {
 
   // For person-to-ship transfers
   const parentShip = unit?.parent_unit_id ? units.find((u) => u.id === unit.parent_unit_id) : null;
-  const ships = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.team_id === unit?.team_id);
+  const ships = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === unit?.mission_id);
   const personsAboard = unit ? units.filter((u) => u.parent_unit_id === unit.id) : [];
 
   useEffect(() => {
@@ -225,12 +226,24 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         </div>
       )}
 
-      {/* VHF-Freq, Role, Unit Type */}
+      {/* VHF-Freq, Discord ID, Role, Unit Type */}
       <div className="grid grid-cols-2 gap-2">
         {unit.callsign && (
           <div>
             <label className="text-[10px] text-gray-600">VHF-Freq</label>
             <div className="text-sm text-krt-accent font-mono font-bold">{unit.callsign}</div>
+          </div>
+        )}
+        {unit.vhf_frequency != null && (
+          <div>
+            <label className="text-[10px] text-gray-600">VHF Frequency</label>
+            <div className="text-sm text-krt-accent font-mono font-bold">{unit.vhf_frequency}</div>
+          </div>
+        )}
+        {unit.discord_id && (
+          <div>
+            <label className="text-[10px] text-gray-600">Discord ID</label>
+            <div className="text-sm text-gray-300 font-mono">{unit.discord_id}</div>
           </div>
         )}
         {unit.role && (
@@ -304,7 +317,7 @@ export default function UnitDetailPanel({ unitId, onClose }) {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: group.color }} />
             <span className="text-sm text-white">{group.name}</span>
-            <span className="text-xs text-gray-500">{group.mission}</span>
+            <span className="text-xs text-gray-500">{group.class_type}</span>
           </div>
         </div>
       )}

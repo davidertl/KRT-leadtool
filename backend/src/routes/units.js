@@ -5,22 +5,22 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { requireTeamMember } = require('../auth/teamAuth');
-const { broadcastToTeam } = require('../socket');
+const { requireMissionMember } = require('../auth/teamAuth');
+const { broadcastToMission } = require('../socket');
 const { validate } = require('../validation/middleware');
 const { schemas } = require('../validation/schemas');
 
-// List units in a team
-router.get('/', requireAuth, requireTeamMember, async (req, res, next) => {
+// List units in a mission
+router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
   try {
-    const { team_id, group_id, status } = req.query;
-    if (!team_id) return res.status(400).json({ error: 'team_id query parameter required' });
+    const { mission_id, group_id, status } = req.query;
+    if (!mission_id) return res.status(400).json({ error: 'mission_id query parameter required' });
 
-    let sql = `SELECT u.*, g.name AS group_name, g.mission AS group_mission, g.color AS group_color
+    let sql = `SELECT u.*, g.name AS group_name, g.class_type AS group_class_type, g.color AS group_color
                FROM units u
                LEFT JOIN groups g ON g.id = u.group_id
-               WHERE u.team_id = $1`;
-    const params = [team_id];
+               WHERE u.mission_id = $1`;
+    const params = [mission_id];
 
     if (group_id) {
       params.push(group_id);
@@ -41,7 +41,7 @@ router.get('/', requireAuth, requireTeamMember, async (req, res, next) => {
 router.get('/:id', requireAuth, async (req, res, next) => {
   try {
     const result = await query(
-      `SELECT u.*, g.name AS group_name, g.mission AS group_mission
+      `SELECT u.*, g.name AS group_name, g.class_type AS group_class_type
        FROM units u
        LEFT JOIN groups g ON g.id = u.group_id
        WHERE u.id = $1`,
@@ -53,25 +53,25 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // Create unit
-router.post('/', requireAuth, validate(schemas.createUnit), requireTeamMember, async (req, res, next) => {
+router.post('/', requireAuth, validate(schemas.createUnit), requireMissionMember, async (req, res, next) => {
   try {
-    const { name, callsign, ship_type, unit_type, team_id, group_id, parent_unit_id, role, crew_count, crew_max,
+    const { name, callsign, vhf_frequency, ship_type, unit_type, mission_id, group_id, parent_unit_id, role, discord_id, crew_count, crew_max,
             pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes } = req.body;
-    if (!name || !team_id) return res.status(400).json({ error: 'name and team_id are required' });
+    if (!name || !mission_id) return res.status(400).json({ error: 'name and mission_id are required' });
 
     const result = await query(
-      `INSERT INTO units (name, callsign, ship_type, unit_type, owner_id, team_id, group_id, parent_unit_id, role, crew_count, crew_max,
+      `INSERT INTO units (name, callsign, vhf_frequency, ship_type, unit_type, owner_id, mission_id, group_id, parent_unit_id, role, discord_id, crew_count, crew_max,
                           pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING *`,
-      [name, callsign || null, ship_type || null, unit_type || 'ship', req.user.id, team_id, group_id || null,
-       parent_unit_id || null, role || null, crew_count || 1, crew_max || null,
+      [name, callsign || null, vhf_frequency || null, ship_type || null, unit_type || 'ship', req.user.id, mission_id, group_id || null,
+       parent_unit_id || null, role || null, discord_id || null, crew_count || 1, crew_max || null,
        pos_x || 0, pos_y || 0, pos_z || 0, heading || 0,
        fuel ?? 100, ammo ?? 100, hull ?? 100,
-       status || 'idle', roe || 'weapons_tight', notes || null]
+       status || 'ready_for_takeoff', roe || 'self_defence', notes || null]
     );
 
-    broadcastToTeam(team_id, 'unit:created', result.rows[0]);
+    broadcastToMission(mission_id, 'unit:created', result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
 });
@@ -79,7 +79,7 @@ router.post('/', requireAuth, validate(schemas.createUnit), requireTeamMember, a
 // Update unit (position, status, group, etc.)
 router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, next) => {
   try {
-    const { name, callsign, ship_type, unit_type, group_id, parent_unit_id, role, crew_count, crew_max,
+    const { name, callsign, vhf_frequency, ship_type, unit_type, group_id, parent_unit_id, role, discord_id, crew_count, crew_max,
             pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes } = req.body;
 
     // Fetch old values for history
@@ -90,7 +90,7 @@ router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, n
     // Build dynamic SET clause — only update fields that were explicitly sent
     const fields = [];
     const values = [];
-    const bodyFields = { name, callsign, ship_type, unit_type, group_id, parent_unit_id, role, crew_count, crew_max,
+    const bodyFields = { name, callsign, vhf_frequency, ship_type, unit_type, group_id, parent_unit_id, role, discord_id, crew_count, crew_max,
                          pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes };
     for (const [key, val] of Object.entries(bodyFields)) {
       if (val !== undefined) {
@@ -119,7 +119,7 @@ router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, n
       }
     }
 
-    broadcastToTeam(newUnit.team_id, 'unit:updated', newUnit);
+    broadcastToMission(newUnit.mission_id, 'unit:updated', newUnit);
     res.json(newUnit);
   } catch (err) { next(err); }
 });
@@ -128,12 +128,12 @@ router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, n
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
     const result = await query(
-      'DELETE FROM units WHERE id = $1 RETURNING id, team_id',
+      'DELETE FROM units WHERE id = $1 RETURNING id, mission_id',
       [req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Unit not found' });
 
-    broadcastToTeam(result.rows[0].team_id, 'unit:deleted', { id: result.rows[0].id });
+    broadcastToMission(result.rows[0].mission_id, 'unit:deleted', { id: result.rows[0].id });
     res.json({ message: 'Unit deleted' });
   } catch (err) { next(err); }
 });
@@ -155,7 +155,7 @@ router.patch('/batch-position', requireAuth, validate(schemas.batchPosition), as
       );
       if (result.rows[0]) {
         results.push(result.rows[0]);
-        broadcastToTeam(result.rows[0].team_id, 'unit:updated', result.rows[0]);
+        broadcastToMission(result.rows[0].mission_id, 'unit:updated', result.rows[0]);
       }
     }
 

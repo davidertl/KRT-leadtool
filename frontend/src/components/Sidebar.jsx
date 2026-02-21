@@ -12,8 +12,9 @@ import BookmarkPanel from './BookmarkPanel';
 import MultiplayerPanel from './MultiplayerPanel';
 import toast from 'react-hot-toast';
 
-const MISSION_TYPES = [
+const CLASS_TYPES = [
   { value: 'SAR', label: '🔍 Search & Rescue', color: '#f59e0b' },
+  { value: 'POV', label: '🚗 POV', color: '#64748b' },
   { value: 'FIGHTER', label: '⚔️ Fighter', color: '#ef4444' },
   { value: 'MINER', label: '⛏️ Mining', color: '#a855f7' },
   { value: 'TRANSPORT', label: '📦 Transport', color: '#22c55e' },
@@ -22,11 +23,11 @@ const MISSION_TYPES = [
   { value: 'CUSTOM', label: '📌 Custom', color: '#6b7280' },
 ];
 
-const STATUS_OPTIONS = ['idle', 'en_route', 'on_station', 'engaged', 'rtb', 'disabled'];
+const STATUS_OPTIONS = ['boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'disabled'];
 
 export default function Sidebar({ onBack }) {
   const { user } = useAuthStore();
-  const { teamId, units, groups, contacts, tasks, operations, events, messages, bookmarks, joinRequests, selectedUnitIds, clearSelection, searchQuery, statusFilter, myMissionRole, canEdit } = useMissionStore();
+  const { missionId, units, groups, contacts, tasks, operations, events, messages, bookmarks, joinRequests, selectedUnitIds, clearSelection, searchQuery, statusFilter, myMissionRole, canEdit } = useMissionStore();
   const [tab, setTab] = useState('units');
   const [showCreateUnit, setShowCreateUnit] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -152,7 +153,7 @@ export default function Sidebar({ onBack }) {
 
             {showCreateUnit && (
               <CreateUnitForm
-                teamId={teamId}
+                missionId={missionId}
                 groups={groups}
                 onClose={() => setShowCreateUnit(false)}
               />
@@ -186,7 +187,7 @@ export default function Sidebar({ onBack }) {
             )}
 
             {showCreateGroup && (
-              <CreateGroupForm teamId={teamId} onClose={() => setShowCreateGroup(false)} />
+              <CreateGroupForm missionId={missionId} onClose={() => setShowCreateGroup(false)} />
             )}
 
             {groups.map((group) => {
@@ -211,7 +212,7 @@ export default function Sidebar({ onBack }) {
             )}
 
             {showSpotrep && (
-              <SpotrepForm teamId={teamId} onClose={() => setShowSpotrep(false)} />
+              <SpotrepForm missionId={missionId} onClose={() => setShowSpotrep(false)} />
             )}
 
             {contacts.filter(c => c.is_active).length === 0 && !showSpotrep && (
@@ -248,7 +249,7 @@ export default function Sidebar({ onBack }) {
             )}
 
             {showTaskForm && (
-              <TaskForm teamId={teamId} onClose={() => setShowTaskForm(false)} />
+              <TaskForm missionId={missionId} onClose={() => setShowTaskForm(false)} />
             )}
 
             {tasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length === 0 && !showTaskForm && (
@@ -289,7 +290,7 @@ export default function Sidebar({ onBack }) {
                 >
                   Clear selection
                 </button>
-                <BatchStatusUpdate unitIds={selectedUnitIds} teamId={teamId} />
+                <BatchStatusUpdate unitIds={selectedUnitIds} missionId={missionId} />
                 {selectedUnits.map((unit) => {
                   const group = groups.find((g) => g.id === unit.group_id);
                   return (
@@ -304,19 +305,19 @@ export default function Sidebar({ onBack }) {
         )}
 
         {/* Operations tab */}
-        {tab === 'ops' && <OperationPanel teamId={teamId} />}
+        {tab === 'ops' && <OperationPanel missionId={missionId} />}
 
         {/* Comms tab */}
-        {tab === 'comms' && <QuickMessages teamId={teamId} />}
+        {tab === 'comms' && <QuickMessages missionId={missionId} />}
 
         {/* Event log tab */}
-        {tab === 'log' && <EventLog teamId={teamId} />}
+        {tab === 'log' && <EventLog missionId={missionId} />}
 
         {/* Bookmarks tab */}
-        {tab === 'bookmarks' && <BookmarkPanel teamId={teamId} />}
+        {tab === 'bookmarks' && <BookmarkPanel missionId={missionId} />}
 
         {/* Multiplayer tab */}
-        {tab === 'multiplayer' && <MultiplayerPanel teamId={teamId} />}
+        {tab === 'multiplayer' && <MultiplayerPanel missionId={missionId} />}
       </div>
     </div>
   );
@@ -365,24 +366,24 @@ function UnitListItem({ unit, group, isSelected, onDoubleClick }) {
 function GroupListItem({ group, unitCount, canEdit }) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group.name);
-  const [editMission, setEditMission] = useState(group.mission);
+  const [editClassType, setEditClassType] = useState(group.class_type);
   const [editColor, setEditColor] = useState(group.color);
   const [saving, setSaving] = useState(false);
 
-  const mission = MISSION_TYPES.find((m) => m.value === group.mission);
+  const classType = CLASS_TYPES.find((m) => m.value === group.class_type);
 
   const handleSave = async () => {
     if (!editName.trim()) return;
     setSaving(true);
     try {
-      const mType = MISSION_TYPES.find((m) => m.value === editMission);
+      const mType = CLASS_TYPES.find((m) => m.value === editClassType);
       const res = await fetch(`/api/groups/${group.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           name: editName.trim(),
-          mission: editMission,
+          class_type: editClassType,
           color: mType?.color || editColor,
         }),
       });
@@ -428,11 +429,11 @@ function GroupListItem({ group, unitCount, canEdit }) {
           autoFocus
         />
         <select
-          value={editMission}
-          onChange={(e) => setEditMission(e.target.value)}
+          value={editClassType}
+          onChange={(e) => setEditClassType(e.target.value)}
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
         >
-          {MISSION_TYPES.map((m) => (
+          {CLASS_TYPES.map((m) => (
             <option key={m.value} value={m.value}>{m.label}</option>
           ))}
         </select>
@@ -458,7 +459,7 @@ function GroupListItem({ group, unitCount, canEdit }) {
         <span className="text-xs text-gray-500 ml-auto">{unitCount} units</span>
       </div>
       <div className="text-xs text-gray-500 mt-1">
-        {mission?.label || group.mission}
+        {classType?.label || group.class_type}
       </div>
     </div>
   );
@@ -467,11 +468,13 @@ function GroupListItem({ group, unitCount, canEdit }) {
 /** Status indicator badge */
 function StatusBadge({ status }) {
   const colors = {
-    idle: 'bg-gray-500',
-    en_route: 'bg-blue-500',
-    on_station: 'bg-green-500',
-    engaged: 'bg-red-500',
-    rtb: 'bg-yellow-500',
+    boarding: 'bg-purple-500',
+    ready_for_takeoff: 'bg-blue-500',
+    on_the_way: 'bg-cyan-500',
+    arrived: 'bg-green-500',
+    ready_for_orders: 'bg-yellow-500',
+    in_combat: 'bg-red-500',
+    heading_home: 'bg-orange-500',
     disabled: 'bg-gray-700',
   };
 
@@ -486,7 +489,7 @@ function StatusBadge({ status }) {
 const MAP_SCALE = 1e6; // must match NavPointMarker
 const SPAWNABLE_NAV_TYPES = ['station', 'rest_stop', 'outpost'];
 
-function CreateUnitForm({ teamId, groups, onClose }) {
+function CreateUnitForm({ missionId, groups, onClose }) {
   const { navData, units } = useMissionStore();
   const [name, setName] = useState('');
   const [callsign, setCallsign] = useState('');
@@ -545,7 +548,7 @@ function CreateUnitForm({ teamId, groups, onClose }) {
   }, {});
 
   // Available ships/vehicles for person assignment
-  const availableShips = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.team_id === teamId);
+  const availableShips = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === missionId);
 
   // Spawnable locations sorted alphabetically
   const spawnLocations = (navData?.points || [])
@@ -598,7 +601,7 @@ function CreateUnitForm({ teamId, groups, onClose }) {
           callsign: callsign || null,
           ship_type: finalShipType,
           unit_type: unitType,
-          team_id: teamId,
+          mission_id: missionId,
           group_id: groupId || null,
           parent_unit_id: parentUnitId || null,
           role: role || null,
@@ -795,9 +798,9 @@ function CreateUnitForm({ teamId, groups, onClose }) {
 }
 
 /** Create group form */
-function CreateGroupForm({ teamId, onClose }) {
+function CreateGroupForm({ missionId, onClose }) {
   const [name, setName] = useState('');
-  const [mission, setMission] = useState('CUSTOM');
+  const [classType, setClassType] = useState('CUSTOM');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -808,15 +811,15 @@ function CreateGroupForm({ teamId, onClose }) {
     setError(null);
 
     try {
-      const mType = MISSION_TYPES.find((m) => m.value === mission);
+      const mType = CLASS_TYPES.find((m) => m.value === classType);
       const res = await fetch('/api/groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           name: name.trim(),
-          team_id: teamId,
-          mission,
+          mission_id: missionId,
+          class_type: classType,
           color: mType?.color || '#3b82f6',
         }),
       });
@@ -849,11 +852,11 @@ function CreateGroupForm({ teamId, onClose }) {
         autoFocus
       />
       <select
-        value={mission}
-        onChange={(e) => setMission(e.target.value)}
+        value={classType}
+        onChange={(e) => setClassType(e.target.value)}
         className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
       >
-        {MISSION_TYPES.map((m) => (
+        {CLASS_TYPES.map((m) => (
           <option key={m.value} value={m.value}>{m.label}</option>
         ))}
       </select>
@@ -871,7 +874,7 @@ function CreateGroupForm({ teamId, onClose }) {
 }
 
 /** Batch status update for selected units */
-function BatchStatusUpdate({ unitIds, teamId }) {
+function BatchStatusUpdate({ unitIds, missionId }) {
   const handleStatusChange = async (newStatus) => {
     try {
       for (const id of unitIds) {

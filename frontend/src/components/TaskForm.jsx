@@ -28,24 +28,23 @@ const TASK_TYPES = [
 ];
 
 const ROE_OPTIONS = [
-  { value: 'weapons_free', label: 'WEAPONS FREE', color: '#ef4444' },
-  { value: 'weapons_tight', label: 'WEAPONS TIGHT', color: '#f59e0b' },
-  { value: 'weapons_hold', label: 'WEAPONS HOLD', color: '#22c55e' },
-  { value: 'defensive', label: 'DEFENSIVE', color: '#3b82f6' },
   { value: 'aggressive', label: 'AGGRESSIVE', color: '#dc2626' },
-  { value: 'no_fire', label: 'NO FIRE', color: '#9ca3af' },
+  { value: 'fire_at_will', label: 'FIRE AT WILL', color: '#ef4444' },
+  { value: 'fire_at_id_target', label: 'FIRE AT ID TARGET', color: '#f59e0b' },
+  { value: 'self_defence', label: 'SELF DEFENCE', color: '#22c55e' },
+  { value: 'dnf', label: 'DO NOT FIRE', color: '#9ca3af' },
 ];
 
 /**
  * Create new task / order form
  */
-export default function TaskForm({ teamId, onClose }) {
+export default function TaskForm({ missionId, onClose }) {
   const { units, groups, contacts, tasks } = useMissionStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskType, setTaskType] = useState('custom');
   const [priority, setPriority] = useState('normal');
-  const [roe, setRoe] = useState('weapons_tight');
+  const [roe, setRoe] = useState('self_defence');
   const [assignedTo, setAssignedTo] = useState('');
   const [assignedGroup, setAssignedGroup] = useState('');
   const [targetContact, setTargetContact] = useState('');
@@ -64,7 +63,7 @@ export default function TaskForm({ teamId, onClose }) {
 
     try {
       const payload = {
-        team_id: teamId,
+        mission_id: missionId,
         title: title.trim(),
         description: description || null,
         task_type: taskType,

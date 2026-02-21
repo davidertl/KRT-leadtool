@@ -6,36 +6,36 @@ import toast from 'react-hot-toast';
 export default function DashboardPage() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
-  const [teams, setTeams] = useState([]);
-  const [newTeamName, setNewTeamName] = useState('');
+  const [missions, setMissions] = useState([]);
+  const [newMissionName, setNewMissionName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/teams', { credentials: 'include' })
+    fetch('/api/missions', { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
-        setTeams(Array.isArray(data) ? data : []);
+        setMissions(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
-  const createTeam = async (e) => {
+  const createMission = async (e) => {
     e.preventDefault();
-    if (!newTeamName.trim()) return;
+    if (!newMissionName.trim()) return;
 
-    const res = await fetch('/api/teams', {
+    const res = await fetch('/api/missions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ name: newTeamName.trim() }),
+      body: JSON.stringify({ name: newMissionName.trim() }),
     });
 
     if (res.ok) {
-      const team = await res.json();
-      setTeams((prev) => [team, ...prev]);
-      setNewTeamName('');
+      const mission = await res.json();
+      setMissions((prev) => [mission, ...prev]);
+      setNewMissionName('');
     }
   };
 
@@ -81,12 +81,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="max-w-4xl mx-auto">
-        {/* Create team */}
-        <form onSubmit={createTeam} className="flex gap-3 mb-4">
+        {/* Create mission */}
+        <form onSubmit={createMission} className="flex gap-3 mb-4">
           <input
             type="text"
-            value={newTeamName}
-            onChange={(e) => setNewTeamName(e.target.value)}
+            value={newMissionName}
+            onChange={(e) => setNewMissionName(e.target.value)}
             placeholder="New mission name..."
             className="flex-1 bg-krt-panel border border-krt-border rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
           />
@@ -116,30 +116,30 @@ export default function DashboardPage() {
           </button>
         </form>
 
-        {/* Team list */}
+        {/* Mission list */}
         {loading ? (
           <p className="text-gray-400 text-center">Loading missions...</p>
-        ) : teams.length === 0 ? (
+        ) : missions.length === 0 ? (
           <div className="text-center text-gray-500 py-12">
             <p className="text-lg mb-2">No missions yet</p>
             <p className="text-sm">Create your first mission above to get started.</p>
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {teams.map((team) => (
+            {missions.map((mission) => (
               <button
-                key={team.id}
-                onClick={() => navigate(`/map/${team.id}`)}
+                key={mission.id}
+                onClick={() => navigate(`/map/${mission.id}`)}
                 className="bg-krt-panel border border-krt-border rounded-xl p-5 text-left hover:border-krt-accent transition-colors group"
               >
                 <h3 className="text-lg font-semibold group-hover:text-krt-accent transition-colors">
-                  {team.name}
+                  {mission.name}
                 </h3>
                 <p className="text-gray-500 text-sm mt-1">
-                  {team.description || 'No description'}
+                  {mission.description || 'No description'}
                 </p>
                 <p className="text-gray-600 text-xs mt-3">
-                  Created {new Date(team.created_at).toLocaleDateString()}
+                  Created {new Date(mission.created_at).toLocaleDateString()}
                 </p>
               </button>
             ))}

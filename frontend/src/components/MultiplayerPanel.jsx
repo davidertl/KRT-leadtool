@@ -21,14 +21,14 @@ function RoleBadge({ role }) {
   );
 }
 
-export default function MultiplayerPanel({ teamId }) {
+export default function MultiplayerPanel({ missionId }) {
   const { members, joinRequests, groups, myMissionRole, onlineUsers, removeJoinRequest, addJoinRequest } = useMissionStore();
   const canManage = myMissionRole === 'gesamtlead' || myMissionRole === 'gruppenlead';
 
   return (
     <div className="space-y-4">
       {/* Join Code */}
-      <JoinCodeSection teamId={teamId} />
+      <JoinCodeSection missionId={missionId} />
 
       {/* Pending join requests */}
       {canManage && joinRequests.length > 0 && (
@@ -38,7 +38,7 @@ export default function MultiplayerPanel({ teamId }) {
           </label>
           <div className="space-y-2">
             {joinRequests.map((jr) => (
-              <JoinRequestCard key={jr.id} jr={jr} teamId={teamId} groups={groups} myRole={myMissionRole} />
+              <JoinRequestCard key={jr.id} jr={jr} missionId={missionId} groups={groups} myRole={myMissionRole} />
             ))}
           </div>
         </div>
@@ -51,7 +51,7 @@ export default function MultiplayerPanel({ teamId }) {
         </label>
         <div className="space-y-1">
           {members.map((m) => (
-            <MemberRow key={m.user_id} member={m} teamId={teamId} groups={groups} onlineUsers={onlineUsers} myRole={myMissionRole} />
+            <MemberRow key={m.user_id} member={m} missionId={missionId} groups={groups} onlineUsers={onlineUsers} myRole={myMissionRole} />
           ))}
         </div>
       </div>
@@ -76,7 +76,7 @@ export default function MultiplayerPanel({ teamId }) {
 }
 
 /** Shows the join code for the team (gesamtlead only) */
-function JoinCodeSection({ teamId }) {
+function JoinCodeSection({ missionId }) {
   const { myMissionRole } = useMissionStore();
   const [joinCode, setJoinCode] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -84,7 +84,7 @@ function JoinCodeSection({ teamId }) {
   const fetchCode = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/teams/${teamId}`, { credentials: 'include' });
+      const res = await fetch(`/api/missions/${missionId}`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setJoinCode(data.join_code);
@@ -123,7 +123,7 @@ function JoinCodeSection({ teamId }) {
 }
 
 /** Card for a pending join request */
-function JoinRequestCard({ jr, teamId, groups, myRole }) {
+function JoinRequestCard({ jr, missionId, groups, myRole }) {
   const [selectedRole, setSelectedRole] = useState('teamlead');
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -132,7 +132,7 @@ function JoinRequestCard({ jr, teamId, groups, myRole }) {
   const handleAccept = async () => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/members/${teamId}/requests/${jr.id}/accept`, {
+      const res = await fetch(`/api/members/${missionId}/requests/${jr.id}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -147,7 +147,7 @@ function JoinRequestCard({ jr, teamId, groups, myRole }) {
       }
       removeJoinRequest(jr.id);
       // Refetch members
-      const membersRes = await fetch(`/api/members/${teamId}/members`, { credentials: 'include' });
+      const membersRes = await fetch(`/api/members/${missionId}/members`, { credentials: 'include' });
       if (membersRes.ok) setMembers(await membersRes.json());
       toast.success(`${jr.username} accepted as ${ROLE_LABELS[selectedRole]?.label}`);
     } catch (err) {
@@ -159,7 +159,7 @@ function JoinRequestCard({ jr, teamId, groups, myRole }) {
   const handleDecline = async () => {
     setBusy(true);
     try {
-      await fetch(`/api/members/${teamId}/requests/${jr.id}/decline`, {
+      await fetch(`/api/members/${missionId}/requests/${jr.id}/decline`, {
         method: 'POST',
         credentials: 'include',
       });
@@ -263,7 +263,7 @@ function JoinRequestCard({ jr, teamId, groups, myRole }) {
 }
 
 /** Single member row with role editing */
-function MemberRow({ member, teamId, groups, onlineUsers, myRole }) {
+function MemberRow({ member, missionId, groups, onlineUsers, myRole }) {
   const [editing, setEditing] = useState(false);
   const [role, setRole] = useState(member.mission_role || 'teamlead');
   const [assignedGroups, setAssignedGroups] = useState(member.assigned_group_ids || []);
@@ -276,7 +276,7 @@ function MemberRow({ member, teamId, groups, onlineUsers, myRole }) {
   const handleSave = async () => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/members/${teamId}/members/${member.user_id}`, {
+      const res = await fetch(`/api/members/${missionId}/members/${member.user_id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -295,7 +295,7 @@ function MemberRow({ member, teamId, groups, onlineUsers, myRole }) {
   const handleRemove = async () => {
     if (!confirm(`Remove ${member.username} from the mission?`)) return;
     try {
-      await fetch(`/api/members/${teamId}/members/${member.user_id}`, {
+      await fetch(`/api/members/${missionId}/members/${member.user_id}`, {
         method: 'DELETE',
         credentials: 'include',
       });

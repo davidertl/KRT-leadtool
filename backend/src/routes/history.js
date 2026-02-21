@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { broadcastToTeam } = require('../socket');
+const { broadcastToMission } = require('../socket');
 
 // Get history for a unit
 router.get('/:unit_id', requireAuth, async (req, res, next) => {
@@ -59,7 +59,7 @@ router.post('/:unit_id/undo', requireAuth, async (req, res, next) => {
     await query('DELETE FROM status_history WHERE id = $1', [entry.id]);
 
     if (revertResult.rows[0]) {
-      broadcastToTeam(revertResult.rows[0].team_id, 'unit:updated', revertResult.rows[0]);
+      broadcastToMission(revertResult.rows[0].mission_id, 'unit:updated', revertResult.rows[0]);
     }
 
     res.json({

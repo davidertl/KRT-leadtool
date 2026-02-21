@@ -5,19 +5,19 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { requireTeamMember } = require('../auth/teamAuth');
-const { broadcastToTeam } = require('../socket');
+const { requireMissionMember } = require('../auth/teamAuth');
+const { broadcastToMission } = require('../socket');
 const { z } = require('zod');
 const { validate } = require('../validation/middleware');
 
 const PHASE_VALUES = ['planning', 'briefing', 'phase_1', 'phase_2', 'phase_3', 'phase_4', 'extraction', 'debrief', 'complete'];
-const ROE_VALUES = ['weapons_free', 'weapons_tight', 'weapons_hold', 'defensive', 'aggressive', 'no_fire'];
+const ROE_VALUES = ['aggressive', 'fire_at_will', 'fire_at_id_target', 'self_defence', 'dnf'];
 
 const createOp = z.object({
-  team_id: z.string().uuid(),
+  mission_id: z.string().uuid(),
   name: z.string().min(1).max(256),
   description: z.string().max(2000).optional().nullable(),
-  roe: z.enum(ROE_VALUES).default('weapons_tight'),
+  roe: z.enum(ROE_VALUES).default('self_defence'),
 });
 
 const updateOp = z.object({
@@ -29,17 +29,17 @@ const updateOp = z.object({
   timer_running: z.boolean().optional(),
 });
 
-/** GET /api/operations?team_id=... */
-router.get('/', requireAuth, requireTeamMember, async (req, res, next) => {
+/** GET /api/operations?mission_id=... */
+router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
   try {
-    const { team_id } = req.query;
+    const { mission_id } = req.query;
     const result = await query(
       `SELECT o.*, u.username AS created_by_name
        FROM operations o
        LEFT JOIN users u ON u.id = o.created_by
-       WHERE o.team_id = $1
+       WHERE o.mission_id = $1
        ORDER BY o.created_at DESC`,
-      [team_id]
+      [mission_id]
     );
     res.json(result.rows);
   } catch (err) { next(err); }
@@ -55,16 +55,16 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 /** POST /api/operations */
-router.post('/', requireAuth, validate(createOp), requireTeamMember, async (req, res, next) => {
+router.post('/', requireAuth, validate(createOp), requireMissionMember, async (req, res, next) => {
   try {
-    const { team_id, name, description, roe } = req.body;
+    const { mission_id, name, description, roe } = req.body;
     const result = await query(
-      `INSERT INTO operations (team_id, created_by, name, description, roe)
+      `INSERT INTO operations (mission_id, created_by, name, description, roe)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [team_id, req.user.id, name, description, roe]
+      [mission_id, req.user.id, name, description, roe]
     );
 
-    broadcastToTeam(team_id, 'operation:created', result.rows[0]);
+    broadcastToMission(mission_id, 'operation:created', result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (err) { next(err); }
 });
@@ -108,7 +108,7 @@ router.put('/:id', requireAuth, validate(updateOp), async (req, res, next) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Operation not found' });
 
-    broadcastToTeam(result.rows[0].team_id, 'operation:updated', result.rows[0]);
+    broadcastToMission(result.rows[0].mission_id, 'operation:updated', result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) { next(err); }
 });
@@ -117,11 +117,11 @@ router.put('/:id', requireAuth, validate(updateOp), async (req, res, next) => {
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
     const result = await query(
-      'DELETE FROM operations WHERE id = $1 RETURNING id, team_id',
+      'DELETE FROM operations WHERE id = $1 RETURNING id, mission_id',
       [req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Operation not found' });
-    broadcastToTeam(result.rows[0].team_id, 'operation:deleted', { id: result.rows[0].id });
+    broadcastToMission(result.rows[0].mission_id, 'operation:deleted', { id: result.rows[0].id });
     res.json({ message: 'Operation deleted' });
   } catch (err) { next(err); }
 });

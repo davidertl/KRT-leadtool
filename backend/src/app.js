@@ -15,7 +15,7 @@ const { valkey } = require('./db/valkey');
 // Route imports
 const healthRoutes = require('./routes/health');
 const authRoutes = require('./routes/auth');
-const teamsRoutes = require('./routes/teams');
+const teamsRoutes = require('./routes/teams');   // missions (file kept as teams.js)
 const unitsRoutes = require('./routes/units');
 const groupsRoutes = require('./routes/groups');
 const waypointsRoutes = require('./routes/waypoints');
@@ -67,7 +67,7 @@ app.use(passport.session());
 // ---- Routes ----
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/teams', teamsRoutes);
+app.use('/api/missions', teamsRoutes);
 app.use('/api/units', unitsRoutes);
 app.use('/api/groups', groupsRoutes);
 app.use('/api/waypoints', waypointsRoutes);

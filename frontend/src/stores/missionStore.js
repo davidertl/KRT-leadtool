@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { db } from '../lib/offlineDb';
 
 export const useMissionStore = create((set, get) => ({
-  teamId: null,
+  missionId: null,
   units: [],
   groups: [],
   waypoints: [],
@@ -30,7 +30,7 @@ export const useMissionStore = create((set, get) => ({
   statusFilter: null,
   activeSystemId: null,
 
-  setTeamId: (teamId) => set({ teamId }),
+  setMissionId: (missionId) => set({ missionId }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setStatusFilter: (s) => set({ statusFilter: s }),
   focusUnit: (id) => set({ focusedUnitId: id, focusedPosition: null }),
@@ -239,12 +239,12 @@ export const useMissionStore = create((set, get) => ({
   setLastSyncTime: (time) => set({ lastSyncTime: time }),
 
   // ---- Load from offline cache ----
-  loadFromCache: async (teamId) => {
+  loadFromCache: async (missionId) => {
     try {
-      const units = await db.units.where('team_id').equals(teamId).toArray();
-      const groups = await db.groups.where('team_id').equals(teamId).toArray();
-      const contacts = await db.contacts.where('team_id').equals(teamId).toArray();
-      const tasks = await db.tasks.where('team_id').equals(teamId).toArray();
+      const units = await db.units.where('mission_id').equals(missionId).toArray();
+      const groups = await db.groups.where('mission_id').equals(missionId).toArray();
+      const contacts = await db.contacts.where('mission_id').equals(missionId).toArray();
+      const tasks = await db.tasks.where('mission_id').equals(missionId).toArray();
       if (units.length > 0) set({ units });
       if (groups.length > 0) set({ groups });
       if (contacts.length > 0) set({ contacts });

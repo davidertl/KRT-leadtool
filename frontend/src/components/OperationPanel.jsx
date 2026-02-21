@@ -15,12 +15,11 @@ const PHASES = [
 ];
 
 const ROE_OPTIONS = [
-  { value: 'weapons_free', label: 'WEAPONS FREE', color: '#ef4444', desc: 'Fire at will' },
-  { value: 'weapons_tight', label: 'WEAPONS TIGHT', color: '#f59e0b', desc: 'Fire on identified targets' },
-  { value: 'weapons_hold', label: 'WEAPONS HOLD', color: '#22c55e', desc: 'Fire only in self-defense' },
-  { value: 'defensive', label: 'DEFENSIVE', color: '#3b82f6', desc: 'Return fire only' },
   { value: 'aggressive', label: 'AGGRESSIVE', color: '#dc2626', desc: 'Engage all contacts' },
-  { value: 'no_fire', label: 'NO FIRE', color: '#9ca3af', desc: 'Do not fire' },
+  { value: 'fire_at_will', label: 'FIRE AT WILL', color: '#ef4444', desc: 'Fire at will' },
+  { value: 'fire_at_id_target', label: 'FIRE AT ID TARGET', color: '#f59e0b', desc: 'Fire on identified targets' },
+  { value: 'self_defence', label: 'SELF DEFENCE', color: '#22c55e', desc: 'Fire only in self-defense' },
+  { value: 'dnf', label: 'DO NOT FIRE', color: '#9ca3af', desc: 'Do not fire' },
 ];
 
 function formatTimer(seconds) {
@@ -35,7 +34,7 @@ function formatTimer(seconds) {
 /**
  * Operation panel — create/manage operations with phase management and timer
  */
-export default function OperationPanel({ teamId }) {
+export default function OperationPanel({ missionId }) {
   const { operations } = useMissionStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -50,7 +49,7 @@ export default function OperationPanel({ teamId }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ team_id: teamId, name: newName.trim(), description: newDesc || null }),
+        body: JSON.stringify({ mission_id: missionId, name: newName.trim(), description: newDesc || null }),
       });
       if (!res.ok) throw new Error('Failed');
       toast.success('Operation created');

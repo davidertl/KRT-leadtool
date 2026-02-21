@@ -23,7 +23,7 @@ function timeAgo(dateStr) {
 /**
  * Quick messages / check-in panel — one-click military comms
  */
-export default function QuickMessages({ teamId }) {
+export default function QuickMessages({ missionId }) {
   const { messages, units } = useMissionStore();
   const [selectedUnit, setSelectedUnit] = useState('');
   const [customMsg, setCustomMsg] = useState('');
@@ -37,7 +37,7 @@ export default function QuickMessages({ teamId }) {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          team_id: teamId,
+          mission_id: missionId,
           unit_id: selectedUnit || null,
           message_type: msgType,
           message: message || null,

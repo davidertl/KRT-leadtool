@@ -49,7 +49,7 @@ function computeRelativePosition(ref, bearingDeg, distanceKm, elevationDeg) {
 /**
  * SPOTREP contact report form — uses bearing & distance from a reference object
  */
-export default function SpotrepForm({ teamId, onClose }) {
+export default function SpotrepForm({ missionId, onClose }) {
   const { navData, units } = useMissionStore();
 
   const [iff, setIff] = useState('unknown');
@@ -136,7 +136,7 @@ export default function SpotrepForm({ teamId, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          team_id: teamId,
+          mission_id: missionId,
           iff,
           threat,
           confidence,

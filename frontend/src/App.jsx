@@ -38,7 +38,7 @@ function App() {
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage />} />
         <Route path="/" element={user ? <DashboardPage /> : <Navigate to="/login" />} />
-        <Route path="/map/:teamId" element={user ? <MapPage /> : <Navigate to="/login" />} />
+        <Route path="/map/:missionId" element={user ? <MapPage /> : <Navigate to="/login" />} />
       </Routes>
     </>
   );

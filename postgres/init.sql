@@ -13,23 +13,26 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Custom ENUM types
 -- ============================================================
 
-CREATE TYPE mission_type AS ENUM (
+CREATE TYPE class_type AS ENUM (
     'SAR',          -- Search and Rescue
+    'POV',          -- Ground Combat
     'FIGHTER',      -- Combat / Fighter escort
     'MINER',        -- Mining operations
-    'TRANSPORT',    -- Cargo / Transport
-    'RECON',        -- Reconnaissance / Scouting
+    'TRANSPORT',    -- Hauling / Transport
+    'RECON',        -- Scouting
     'LOGISTICS',    -- Supply / Logistics
     'CUSTOM'        -- User-defined mission
 );
 
 CREATE TYPE unit_status AS ENUM (
-    'idle',         -- Standby / no active task
-    'en_route',     -- Moving to destination
-    'on_station',   -- Arrived at assigned position
-    'engaged',      -- In combat or active operation
-    'rtb',          -- Returning to base
-    'disabled'      -- Damaged / out of action
+    'boarding',         -- In the process of boarding
+    'ready_for_takeoff',-- Standby / no active task
+    'on_the_way',       -- Moving to destination
+    'arrived',          -- Arrived at assigned position
+    'ready_for_orders', -- Awaiting new orders
+    'in_combat',        -- In combat or active operation
+    'heading_home',     -- Returning to base
+    'disabled'          -- Damaged / out of action
 );
 
 CREATE TYPE user_role AS ENUM (
@@ -117,12 +120,11 @@ CREATE TYPE contact_confidence AS ENUM (
 
 -- ROE (Rules of Engagement) presets
 CREATE TYPE roe_preset AS ENUM (
-    'weapons_free',
-    'weapons_tight',
-    'weapons_hold',
-    'defensive',
     'aggressive',
-    'no_fire'
+    'fire_at_will',
+    'fire_at_id_target',
+    'self_defence',
+    'dnf'
 );
 
 -- Operation phase
@@ -172,9 +174,9 @@ CREATE TABLE users (
 CREATE INDEX idx_users_discord_id ON users(discord_id);
 
 -- ============================================================
--- Teams / Projects (mission scenarios)
+-- Missions (mission scenarios, formerly "teams")
 -- ============================================================
-CREATE TABLE teams (
+CREATE TABLE missions (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name            VARCHAR(256) NOT NULL,
     description     TEXT,
@@ -185,25 +187,25 @@ CREATE TABLE teams (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_teams_owner ON teams(owner_id);
-CREATE INDEX idx_teams_join_code ON teams(join_code);
+CREATE INDEX idx_missions_owner ON missions(owner_id);
+CREATE INDEX idx_missions_join_code ON missions(join_code);
 
 -- ============================================================
--- Groups / Fleets (within a team/mission)
+-- Groups / Fleets (within a mission)
 -- ============================================================
 CREATE TABLE groups (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     name            VARCHAR(256) NOT NULL,
-    mission         mission_type NOT NULL DEFAULT 'CUSTOM',
+    class_type      class_type NOT NULL DEFAULT 'CUSTOM',
     color           VARCHAR(7) DEFAULT '#3B82F6',   -- hex color for map display
     icon            VARCHAR(64) DEFAULT 'default',   -- icon identifier
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_groups_team ON groups(team_id);
-CREATE INDEX idx_groups_mission ON groups(mission);
+CREATE INDEX idx_groups_mission ON groups(mission_id);
+CREATE INDEX idx_groups_class_type ON groups(class_type);
 
 -- ============================================================
 -- Units / Ships
@@ -211,12 +213,13 @@ CREATE INDEX idx_groups_mission ON groups(mission);
 CREATE TABLE units (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name            VARCHAR(256) NOT NULL,
-    callsign        VARCHAR(64),                      -- tactical callsign e.g. "Alpha-1"
-    ship_type       VARCHAR(128),                     -- e.g. "Carrack", "Gladius"
+    callsign        VARCHAR(64),                      -- short name / tactical callsign e.g. "Alpha-1"
+    vhf_frequency   INTEGER CHECK (vhf_frequency >= 1 AND vhf_frequency <= 99999),  -- VHF freq 00001-99999
+    ship_type       VARCHAR(128),                     -- e.g. "Carrack", "Gladius" (autofill from known types)
     unit_type       unit_type NOT NULL DEFAULT 'ship',
     owner_id        UUID REFERENCES users(id) ON DELETE SET NULL,
     group_id        UUID REFERENCES groups(id) ON DELETE SET NULL,
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
 
     -- Role & crew
     role            VARCHAR(128),                     -- e.g. "Fighter escort", "Medical"
@@ -225,6 +228,9 @@ CREATE TABLE units (
 
     -- Parent unit (person aboard a ship)
     parent_unit_id  UUID REFERENCES units(id) ON DELETE SET NULL,
+
+    -- Discord link (for persons)
+    discord_id      VARCHAR(32),                      -- optional link to Discord user for permissions
 
     -- Position in 3D game space
     pos_x           DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -237,8 +243,8 @@ CREATE TABLE units (
     ammo            INTEGER DEFAULT 100 CHECK (ammo >= 0 AND ammo <= 100),
     hull            INTEGER DEFAULT 100 CHECK (hull >= 0 AND hull <= 100),
 
-    status          unit_status NOT NULL DEFAULT 'idle',
-    roe             roe_preset DEFAULT 'weapons_tight',
+    status          unit_status NOT NULL DEFAULT 'ready_for_takeoff',
+    roe             roe_preset DEFAULT 'self_defence',
     notes           TEXT,
 
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -247,7 +253,7 @@ CREATE TABLE units (
 
 CREATE INDEX idx_units_owner ON units(owner_id);
 CREATE INDEX idx_units_group ON units(group_id);
-CREATE INDEX idx_units_team ON units(team_id);
+CREATE INDEX idx_units_mission ON units(mission_id);
 CREATE INDEX idx_units_status ON units(status);
 
 -- ============================================================
@@ -292,36 +298,36 @@ CREATE INDEX idx_status_history_time ON status_history(changed_at DESC);
 CREATE INDEX idx_status_history_user ON status_history(changed_by);
 
 -- ============================================================
--- Team memberships (many-to-many: users ↔ teams)
+-- Mission memberships (many-to-many: users ↔ missions)
 -- ============================================================
-CREATE TABLE team_members (
-    team_id             UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+CREATE TABLE mission_members (
+    mission_id          UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role                user_role NOT NULL DEFAULT 'member',
     mission_role        mission_role DEFAULT 'teamlead',
     assigned_group_ids  UUID[] DEFAULT '{}',          -- groups this member can manage
     joined_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (team_id, user_id)
+    PRIMARY KEY (mission_id, user_id)
 );
 
-CREATE INDEX idx_team_members_user ON team_members(user_id);
+CREATE INDEX idx_mission_members_user ON mission_members(user_id);
 
 -- ============================================================
 -- Join Requests (pending requests to join a team/mission)
 -- ============================================================
 CREATE TABLE join_requests (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     status          VARCHAR(16) NOT NULL DEFAULT 'pending',  -- 'pending', 'accepted', 'declined'
     message         TEXT,                             -- optional message from requester
     reviewed_by     UUID REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at     TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(team_id, user_id)
+    UNIQUE(mission_id, user_id)
 );
 
-CREATE INDEX idx_join_requests_team ON join_requests(team_id, status);
+CREATE INDEX idx_join_requests_mission ON join_requests(mission_id, status);
 CREATE INDEX idx_join_requests_user ON join_requests(user_id);
 
 -- ============================================================
@@ -329,7 +335,7 @@ CREATE INDEX idx_join_requests_user ON join_requests(user_id);
 -- ============================================================
 CREATE TABLE contacts (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     reported_by     UUID REFERENCES users(id) ON DELETE SET NULL,
 
     -- Classification
@@ -363,16 +369,16 @@ CREATE TABLE contacts (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_contacts_team ON contacts(team_id);
+CREATE INDEX idx_contacts_mission ON contacts(mission_id);
 CREATE INDEX idx_contacts_iff ON contacts(iff);
-CREATE INDEX idx_contacts_active ON contacts(team_id, is_active);
+CREATE INDEX idx_contacts_active ON contacts(mission_id, is_active);
 
 -- ============================================================
 -- Tasks / Orders (mission assignments)
 -- ============================================================
 CREATE TABLE tasks (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
     assigned_to     UUID REFERENCES units(id) ON DELETE SET NULL,
     assigned_group  UUID REFERENCES groups(id) ON DELETE SET NULL,
@@ -382,7 +388,7 @@ CREATE TABLE tasks (
     task_type       task_type NOT NULL DEFAULT 'custom',
     priority        task_priority NOT NULL DEFAULT 'normal',
     status          task_status NOT NULL DEFAULT 'pending',
-    roe             roe_preset DEFAULT 'weapons_tight',
+    roe             roe_preset DEFAULT 'self_defence',
 
     -- Optional target location
     target_x        DOUBLE PRECISION,
@@ -404,7 +410,7 @@ CREATE TABLE tasks (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_tasks_team ON tasks(team_id);
+CREATE INDEX idx_tasks_mission ON tasks(mission_id);
 CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_assigned_unit ON tasks(assigned_to);
 CREATE INDEX idx_tasks_assigned_group ON tasks(assigned_group);
@@ -519,12 +525,12 @@ CREATE INDEX idx_jump_edges_to ON jump_edges(to_nav_id);
 -- ============================================================
 CREATE TABLE operations (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
     name            VARCHAR(256) NOT NULL,
     description     TEXT,
     phase           op_phase NOT NULL DEFAULT 'planning',
-    roe             roe_preset NOT NULL DEFAULT 'weapons_tight',
+    roe             roe_preset NOT NULL DEFAULT 'self_defence',
     started_at      TIMESTAMPTZ,
     ended_at        TIMESTAMPTZ,
     -- Timer (seconds remaining for current phase)
@@ -535,14 +541,14 @@ CREATE TABLE operations (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_operations_team ON operations(team_id);
+CREATE INDEX idx_operations_mission ON operations(mission_id);
 
 -- ============================================================
 -- Event Log / Mission Timeline
 -- ============================================================
 CREATE TABLE event_log (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     operation_id    UUID REFERENCES operations(id) ON DELETE SET NULL,
     user_id         UUID REFERENCES users(id) ON DELETE SET NULL,
     unit_id         UUID REFERENCES units(id) ON DELETE SET NULL,
@@ -553,7 +559,7 @@ CREATE TABLE event_log (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_event_log_team ON event_log(team_id);
+CREATE INDEX idx_event_log_mission ON event_log(mission_id);
 CREATE INDEX idx_event_log_operation ON event_log(operation_id);
 CREATE INDEX idx_event_log_time ON event_log(created_at DESC);
 
@@ -562,7 +568,7 @@ CREATE INDEX idx_event_log_time ON event_log(created_at DESC);
 -- ============================================================
 CREATE TABLE quick_messages (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     user_id         UUID REFERENCES users(id) ON DELETE SET NULL,
     unit_id         UUID REFERENCES units(id) ON DELETE SET NULL,
     message_type    VARCHAR(32) NOT NULL,             -- 'checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom'
@@ -570,7 +576,7 @@ CREATE TABLE quick_messages (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_quick_messages_team ON quick_messages(team_id);
+CREATE INDEX idx_quick_messages_mission ON quick_messages(mission_id);
 CREATE INDEX idx_quick_messages_time ON quick_messages(created_at DESC);
 
 -- ============================================================
@@ -578,7 +584,7 @@ CREATE INDEX idx_quick_messages_time ON quick_messages(created_at DESC);
 -- ============================================================
 CREATE TABLE bookmarks (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
     user_id         UUID REFERENCES users(id) ON DELETE SET NULL,
     name            VARCHAR(256) NOT NULL,
     pos_x           DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -586,12 +592,12 @@ CREATE TABLE bookmarks (
     pos_z           DOUBLE PRECISION NOT NULL DEFAULT 0,
     zoom            DOUBLE PRECISION DEFAULT 500,
     icon            VARCHAR(64) DEFAULT '📌',
-    is_shared       BOOLEAN NOT NULL DEFAULT false,   -- visible to all team members
+    is_shared       BOOLEAN NOT NULL DEFAULT false,   -- visible to all mission members
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bookmarks_team ON bookmarks(team_id);
+CREATE INDEX idx_bookmarks_mission ON bookmarks(mission_id);
 CREATE INDEX idx_bookmarks_user ON bookmarks(user_id);
 
 -- ============================================================
@@ -608,8 +614,8 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_users_updated_at
     BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
-CREATE TRIGGER trg_teams_updated_at
-    BEFORE UPDATE ON teams FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER trg_missions_updated_at
+    BEFORE UPDATE ON missions FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 CREATE TRIGGER trg_groups_updated_at
     BEFORE UPDATE ON groups FOR EACH ROW EXECUTE FUNCTION update_updated_at();

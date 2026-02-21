@@ -42,7 +42,7 @@ function timeAgo(dateStr) {
 /**
  * Event log / mission timeline — displays chronological events
  */
-export default function EventLog({ teamId }) {
+export default function EventLog({ missionId }) {
   const { events } = useMissionStore();
 
   return (

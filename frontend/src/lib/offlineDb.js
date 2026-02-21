@@ -22,17 +22,26 @@ db.version(2).stores({
   syncMeta: 'key',
 });
 
+db.version(3).stores({
+  units: 'id, mission_id, group_id, owner_id, status, updated_at',
+  groups: 'id, mission_id, class_type',
+  waypoints: 'id, unit_id, sequence',
+  contacts: 'id, mission_id, iff, is_active, updated_at',
+  tasks: 'id, mission_id, status, priority, updated_at',
+  syncMeta: 'key',
+});
+
 /**
- * Save the last sync timestamp for a team
+ * Save the last sync timestamp for a mission
  */
-export async function setLastSync(teamId, timestamp) {
-  await db.syncMeta.put({ key: `lastSync:${teamId}`, value: timestamp });
+export async function setLastSync(missionId, timestamp) {
+  await db.syncMeta.put({ key: `lastSync:${missionId}`, value: timestamp });
 }
 
 /**
- * Get the last sync timestamp for a team
+ * Get the last sync timestamp for a mission
  */
-export async function getLastSync(teamId) {
-  const record = await db.syncMeta.get(`lastSync:${teamId}`);
+export async function getLastSync(missionId) {
+  const record = await db.syncMeta.get(`lastSync:${missionId}`);
   return record?.value || null;
 }

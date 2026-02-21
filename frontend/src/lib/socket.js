@@ -23,9 +23,9 @@ function setStatus(s) {
   statusListeners.forEach((cb) => cb(s));
 }
 
-export function connectSocket(teamId) {
+export function connectSocket(missionId) {
   if (socket?.connected) {
-    socket.emit('team:leave', socket._currentTeam);
+    socket.emit('mission:leave', socket._currentMission);
   }
 
   socket = io({
@@ -38,18 +38,18 @@ export function connectSocket(teamId) {
     reconnectionAttempts: Infinity,
   });
 
-  socket._currentTeam = teamId;
+  socket._currentMission = missionId;
 
   socket.on('connect', () => {
     console.log('[KRT] WebSocket connected');
     setStatus('connected');
     toast.success('Connected to server');
-    socket.emit('team:join', teamId);
+    socket.emit('mission:join', missionId);
 
     // Delta sync on reconnect
     const lastSync = useMissionStore.getState().lastSyncTime;
     if (lastSync) {
-      fetch(`/api/sync?team_id=${teamId}&since=${lastSync}`, { credentials: 'include' })
+      fetch(`/api/sync?mission_id=${missionId}&since=${lastSync}`, { credentials: 'include' })
         .then((res) => res.json())
         .then((data) => {
           const store = useMissionStore.getState();
@@ -108,7 +108,7 @@ export function connectSocket(teamId) {
   // Quick messages
   socket.on('message:created', (msg) => useMissionStore.getState().addMessage(msg));
 
-  socket.on('team:online', (users) => useMissionStore.getState().setOnlineUsers(users));
+  socket.on('mission:online', (users) => useMissionStore.getState().setOnlineUsers(users));
 
   // Member / join request events
   socket.on('member:join_request', (jr) => {

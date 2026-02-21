@@ -24,10 +24,10 @@ async function safeFetch(url, opts, fallback = []) {
 }
 
 export default function MapPage() {
-  const { teamId } = useParams();
+  const { missionId } = useParams();
   const navigate = useNavigate();
   const {
-    setTeamId, setUnits, setGroups, setWaypoints, setContacts, setTasks,
+    setMissionId, setUnits, setGroups, setWaypoints, setContacts, setTasks,
     setOperations, setEvents, setMessages, setBookmarks, setNavData,
     setActiveSystemId, setLastSyncTime, loadFromCache,
     setMembers, setJoinRequests, setMyMissionRole, setMyAssignedGroups,
@@ -35,30 +35,30 @@ export default function MapPage() {
   } = useMissionStore();
 
   useEffect(() => {
-    setTeamId(teamId);
+    setMissionId(missionId);
 
     // Load cached data first (offline support)
-    loadFromCache(teamId);
+    loadFromCache(missionId);
 
     const creds = { credentials: 'include' };
 
     // Fetch fresh data from server
     Promise.all([
-      safeFetch(`/api/units?team_id=${teamId}`, creds),
-      safeFetch(`/api/groups?team_id=${teamId}`, creds),
-      safeFetch(`/api/contacts?team_id=${teamId}&active_only=true`, creds),
-      safeFetch(`/api/tasks?team_id=${teamId}`, creds),
-      safeFetch(`/api/operations?team_id=${teamId}`, creds),
-      safeFetch(`/api/events?team_id=${teamId}&limit=100`, creds),
-      safeFetch(`/api/messages?team_id=${teamId}&limit=100`, creds),
-      safeFetch(`/api/bookmarks?team_id=${teamId}`, creds),
+      safeFetch(`/api/units?mission_id=${missionId}`, creds),
+      safeFetch(`/api/groups?mission_id=${missionId}`, creds),
+      safeFetch(`/api/contacts?mission_id=${missionId}&active_only=true`, creds),
+      safeFetch(`/api/tasks?mission_id=${missionId}`, creds),
+      safeFetch(`/api/operations?mission_id=${missionId}`, creds),
+      safeFetch(`/api/events?mission_id=${missionId}&limit=100`, creds),
+      safeFetch(`/api/messages?mission_id=${missionId}&limit=100`, creds),
+      safeFetch(`/api/bookmarks?mission_id=${missionId}`, creds),
       safeFetch(`/api/navigation/systems`, creds),
-      safeFetch(`/api/waypoints?team_id=${teamId}`, creds),
-      safeFetch(`/api/members/${teamId}/members`, creds),
-      safeFetch(`/api/members/${teamId}/requests`, creds),
-      safeFetch(`/api/teams/${teamId}`, creds, null),
+      safeFetch(`/api/waypoints?mission_id=${missionId}`, creds),
+      safeFetch(`/api/members/${missionId}/members`, creds),
+      safeFetch(`/api/members/${missionId}/requests`, creds),
+      safeFetch(`/api/missions/${missionId}`, creds, null),
     ])
-      .then(([units, groups, contacts, tasks, operations, events, messages, bookmarks, systems, waypoints, members, joinRequests, teamInfo]) => {
+      .then(([units, groups, contacts, tasks, operations, events, messages, bookmarks, systems, waypoints, members, joinRequests, missionInfo]) => {
         setUnits(Array.isArray(units) ? units : []);
         setGroups(Array.isArray(groups) ? groups : []);
         setContacts(Array.isArray(contacts) ? contacts : []);
@@ -71,10 +71,10 @@ export default function MapPage() {
         setMembers(Array.isArray(members) ? members : []);
         setJoinRequests(Array.isArray(joinRequests) ? joinRequests : []);
 
-        // Set current user's mission role from the team info
-        if (teamInfo && teamInfo.mission_role) {
-          setMyMissionRole(teamInfo.mission_role);
-          setMyAssignedGroups(teamInfo.assigned_group_ids || []);
+        // Set current user's mission role from the mission info
+        if (missionInfo && missionInfo.mission_role) {
+          setMyMissionRole(missionInfo.mission_role);
+          setMyAssignedGroups(missionInfo.assigned_group_ids || []);
         }
 
         // Load first system navigation data
@@ -101,12 +101,12 @@ export default function MapPage() {
       });
 
     // Connect WebSocket
-    const socket = connectSocket(teamId);
+    const socket = connectSocket(missionId);
 
     return () => {
       disconnectSocket();
     };
-  }, [teamId]);
+  }, [missionId]);
 
   return (
     <div className="flex h-screen w-screen bg-krt-bg overflow-hidden">

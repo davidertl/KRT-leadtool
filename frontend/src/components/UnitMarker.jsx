@@ -6,16 +6,19 @@ import { emitUnitMove } from '../lib/socket';
 import * as THREE from 'three';
 
 const STATUS_COLORS = {
-  idle: '#6b7280',
-  en_route: '#3b82f6',
-  on_station: '#22c55e',
-  engaged: '#ef4444',
-  rtb: '#f59e0b',
+  boarding: '#a855f7',
+  ready_for_takeoff: '#3b82f6',
+  on_the_way: '#06b6d4',
+  arrived: '#22c55e',
+  ready_for_orders: '#f59e0b',
+  in_combat: '#ef4444',
+  heading_home: '#f97316',
   disabled: '#4b5563',
 };
 
 const MISSION_ICONS = {
   SAR: '🔍',
+  POV: '🚗',
   FIGHTER: '⚔️',
   MINER: '⛏️',
   TRANSPORT: '📦',
@@ -105,13 +108,13 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
       // Emit real-time move to other clients (throttled by socket)
       emitUnitMove({
         id: unit.id,
-        team_id: unit.team_id,
+        mission_id: unit.mission_id,
         pos_x: newX,
         pos_y: unit.pos_y,
         pos_z: newZ,
       });
     }
-  }, [dragging, unit.id, unit.team_id, unit.pos_x, unit.pos_z, unit.pos_y]);
+  }, [dragging, unit.id, unit.mission_id, unit.pos_x, unit.pos_z, unit.pos_y]);
 
   const handlePointerUp = useCallback(async (e) => {
     if (!dragging) return;
@@ -219,7 +222,7 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
         >
           <div className="bg-krt-panel/90 border border-krt-border rounded-lg px-3 py-2 text-center whitespace-nowrap backdrop-blur-sm">
             <div className="text-xs font-bold text-white">
-              {MISSION_ICONS[group?.mission] || ''} {unit.name}
+              {MISSION_ICONS[group?.class_type] || ''} {unit.name}
             </div>
             <div className="text-xs text-gray-400">
               {unit.ship_type || 'Unknown'} • {unit.status}
