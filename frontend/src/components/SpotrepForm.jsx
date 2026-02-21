@@ -48,17 +48,20 @@ function computeRelativePosition(ref, bearingDeg, distanceKm, elevationDeg) {
 
 /**
  * SPOTREP contact report form — uses bearing & distance from a reference object
+ * Pass `contact` prop to enter edit mode (pre-fills fields, uses PUT).
  */
-export default function SpotrepForm({ missionId, onClose }) {
+export default function SpotrepForm({ missionId, onClose, contact: editContact }) {
   const { navData, units } = useMissionStore();
 
-  const [iff, setIff] = useState('unknown');
-  const [threat, setThreat] = useState('none');
-  const [confidence, setConfidence] = useState('unconfirmed');
-  const [name, setName] = useState('');
-  const [shipType, setShipType] = useState('');
-  const [count, setCount] = useState(1);
-  const [notes, setNotes] = useState('');
+  const isEdit = !!editContact;
+
+  const [iff, setIff] = useState(editContact?.iff || 'unknown');
+  const [threat, setThreat] = useState(editContact?.threat || 'none');
+  const [confidence, setConfidence] = useState(editContact?.confidence || 'unconfirmed');
+  const [name, setName] = useState(editContact?.name || '');
+  const [shipType, setShipType] = useState(editContact?.ship_type || '');
+  const [count, setCount] = useState(editContact?.count || 1);
+  const [notes, setNotes] = useState(editContact?.notes || '');
   const [submitting, setSubmitting] = useState(false);
   const [createdContact, setCreatedContact] = useState(null); // after submit, for "Create Task" flow
 
@@ -67,6 +70,11 @@ export default function SpotrepForm({ missionId, onClose }) {
   const [bearing, setBearing] = useState(0);
   const [distanceKm, setDistanceKm] = useState(0);
   const [elevation, setElevation] = useState(0);
+
+  // Direct position override for edit mode (keeps existing position if no ref chosen)
+  const [directPos, setDirectPos] = useState(
+    editContact ? { x: editContact.pos_x || 0, y: editContact.pos_y || 0, z: editContact.pos_z || 0 } : null
+  );
 
   // Build list of reference objects: nav points + own units
   const referenceObjects = useMemo(() => {
@@ -135,51 +143,68 @@ export default function SpotrepForm({ missionId, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!refId || !selectedRef) {
+    // In edit mode, use relative position if a ref was chosen, otherwise keep direct position
+    let pos;
+    if (refId && selectedRef) {
+      pos = computeRelativePosition(selectedRef, bearing, distanceKm, elevation);
+    } else if (isEdit && directPos) {
+      pos = directPos;
+    } else {
       toast.error('Please select a reference location');
       return;
     }
 
-    const pos = computeRelativePosition(selectedRef, bearing, distanceKm, elevation);
     setSubmitting(true);
 
     try {
-      const res = await fetch('/api/contacts', {
-        method: 'POST',
+      const url = isEdit ? `/api/contacts/${editContact.id}` : '/api/contacts';
+      const method = isEdit ? 'PUT' : 'POST';
+      const payload = {
+        iff,
+        threat,
+        confidence,
+        name: effectiveName || null,
+        ship_type: shipType || null,
+        count,
+        pos_x: pos.x,
+        pos_y: pos.y,
+        pos_z: pos.z,
+        notes: notes || null,
+      };
+      if (!isEdit) {
+        payload.mission_id = missionId;
+        payload.vel_x = 0;
+        payload.vel_y = 0;
+        payload.vel_z = 0;
+      }
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          mission_id: missionId,
-          iff,
-          threat,
-          confidence,
-          name: effectiveName || null,
-          ship_type: shipType || null,
-          count,
-          pos_x: pos.x,
-          pos_y: pos.y,
-          pos_z: pos.z,
-          vel_x: 0,
-          vel_y: 0,
-          vel_z: 0,
-          notes: notes || null,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) throw new Error('Failed to submit');
       const contact = await res.json();
-      setCreatedContact(contact);
-      toast.success('SPOTREP filed');
+      if (isEdit) {
+        useMissionStore.getState().updateContact(contact);
+        toast.success('SPOTREP updated');
+        onClose();
+      } else {
+        setCreatedContact(contact);
+        toast.success('SPOTREP filed');
+      }
     } catch {
-      toast.error('Failed to submit SPOTREP');
+      toast.error(isEdit ? 'Failed to update SPOTREP' : 'Failed to submit SPOTREP');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Create task from spotrep
-  const handleCreateTask = async () => {
-    if (!createdContact) return;
+  // Create task from spotrep (works for both new and edit mode)
+  const handleCreateTask = async (sourceContact) => {
+    if (!sourceContact) return;
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -187,15 +212,15 @@ export default function SpotrepForm({ missionId, onClose }) {
         credentials: 'include',
         body: JSON.stringify({
           mission_id: missionId,
-          title: `Respond to: ${createdContact.name || 'Contact'}`,
-          description: `Auto-created from SPOTREP. ${createdContact.iff} ${createdContact.ship_type || ''} ×${createdContact.count}. Threat: ${createdContact.threat}`,
-          task_type: createdContact.iff === 'hostile' ? 'intercept' : 'recon',
-          priority: createdContact.threat === 'critical' ? 'critical' : createdContact.threat === 'high' ? 'high' : 'normal',
-          target_x: createdContact.pos_x,
-          target_y: createdContact.pos_y,
-          target_z: createdContact.pos_z,
-          target_contact: createdContact.id,
-          source_contact_id: createdContact.id,
+          title: `Respond to: ${sourceContact.name || 'Contact'}`,
+          description: `Auto-created from SPOTREP. ${sourceContact.iff} ${sourceContact.ship_type || ''} ×${sourceContact.count}. Threat: ${sourceContact.threat}`,
+          task_type: sourceContact.iff === 'hostile' ? 'intercept' : 'recon',
+          priority: sourceContact.threat === 'critical' ? 'critical' : sourceContact.threat === 'high' ? 'high' : 'normal',
+          target_x: sourceContact.pos_x,
+          target_y: sourceContact.pos_y,
+          target_z: sourceContact.pos_z,
+          target_contact: sourceContact.id,
+          source_contact_id: sourceContact.id,
         }),
       });
       if (!res.ok) throw new Error('Failed');
@@ -219,7 +244,7 @@ export default function SpotrepForm({ missionId, onClose }) {
           {createdContact.ship_type && <div className="text-xs text-gray-500">{createdContact.ship_type}</div>}
         </div>
         <div className="flex gap-2">
-          <button onClick={handleCreateTask} className="bg-krt-accent text-white text-sm px-3 py-1.5 rounded">
+          <button onClick={() => handleCreateTask(createdContact)} className="bg-krt-accent text-white text-sm px-3 py-1.5 rounded">
             🎯 Create Task from SPOTREP
           </button>
           <button onClick={onClose} className="text-gray-400 text-sm px-3 py-1">
@@ -233,7 +258,7 @@ export default function SpotrepForm({ missionId, onClose }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-        📡 SPOTREP — Contact Report
+        {isEdit ? '✏️ Edit SPOTREP' : '📡 SPOTREP — Contact Report'}
       </h4>
 
       {/* IFF Classification */}
@@ -444,14 +469,23 @@ export default function SpotrepForm({ missionId, onClose }) {
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
           type="submit"
           disabled={submitting}
           className="bg-krt-accent text-white text-sm px-4 py-1.5 rounded disabled:opacity-50"
         >
-          {submitting ? 'Filing…' : 'File SPOTREP'}
+          {submitting ? (isEdit ? 'Saving…' : 'Filing…') : (isEdit ? 'Save Changes' : 'File SPOTREP')}
         </button>
+        {isEdit && (
+          <button
+            type="button"
+            onClick={() => handleCreateTask(editContact)}
+            className="bg-yellow-600 hover:bg-yellow-500 text-white text-sm px-3 py-1.5 rounded"
+          >
+            🎯 Create Task
+          </button>
+        )}
         <button type="button" onClick={onClose} className="text-gray-400 text-sm px-3 py-1">
           Cancel
         </button>
