@@ -64,9 +64,22 @@ export default function EventLog({ missionId }) {
   const [search, setSearch] = useState('');
   const [activeTypes, setActiveTypes] = useState(new Set(EVENT_TYPES.map((t) => t.value))); // all checked by default
   const [unitFilter, setUnitFilter] = useState('');
+  const [timeRange, setTimeRange] = useState(0); // 0 = all, value in seconds
   const [showManual, setShowManual] = useState(false);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const typeDropdownRef = useRef(null);
+
+  const TIME_RANGES = [
+    { value: 0, label: 'All' },
+    { value: 30, label: '30s' },
+    { value: 60, label: '1m' },
+    { value: 120, label: '2m' },
+    { value: 300, label: '5m' },
+    { value: 600, label: '10m' },
+    { value: 900, label: '15m' },
+    { value: 1800, label: '30m' },
+    { value: 3600, label: '1h' },
+  ];
 
   /* Manual entry state */
   const [manualType, setManualType] = useState('custom');
@@ -105,6 +118,10 @@ export default function EventLog({ missionId }) {
       list = list.filter((e) => activeTypes.has(e.event) || activeTypes.has(e.event_type));
     }
     if (unitFilter) list = list.filter((e) => e.unit_id === unitFilter);
+    if (timeRange > 0) {
+      const cutoff = Date.now() - timeRange * 1000;
+      list = list.filter((e) => new Date(e.created_at).getTime() >= cutoff);
+    }
     if (search) {
       const q = search.toLowerCase();
       list = list.filter((e) =>
@@ -114,7 +131,7 @@ export default function EventLog({ missionId }) {
       );
     }
     return list;
-  }, [events, activeTypes, unitFilter, search]);
+  }, [events, activeTypes, unitFilter, timeRange, search]);
 
   const handleExport = async () => {
     try {
@@ -223,6 +240,23 @@ export default function EventLog({ missionId }) {
             <option key={u.id} value={u.id}>{u.callsign || u.name}</option>
           ))}
         </select>
+
+        {/* Time range pills */}
+        <div className="flex flex-wrap gap-0.5">
+          {TIME_RANGES.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => setTimeRange(r.value)}
+              className={`text-[10px] px-1.5 py-0.5 rounded-full transition-colors ${
+                timeRange === r.value
+                  ? 'bg-krt-accent text-white'
+                  : 'bg-krt-bg text-gray-400 hover:text-white'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Action bar */}

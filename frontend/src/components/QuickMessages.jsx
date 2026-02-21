@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useMissionStore } from '../stores/missionStore';
 import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
@@ -30,11 +30,26 @@ function timeAgo(dateStr) {
 export default function QuickMessages({ missionId }) {
   const { messages, units, groups } = useMissionStore();
   const user = useAuthStore((s) => s.user);
-  const [selectedUnit, setSelectedUnit] = useState('');
   const [recipientType, setRecipientType] = useState('system');
   const [recipientId, setRecipientId] = useState('');
   const [customMsg, setCustomMsg] = useState('');
   const [sending, setSending] = useState(false);
+
+  /* Auto-select the user's person unit if one exists */
+  const userPersonId = useMemo(() => {
+    if (!user) return '';
+    // Match by owner_id first, then by discord_id
+    const person = units.find((u) => u.unit_type === 'person' && u.owner_id === user.id)
+      || units.find((u) => u.unit_type === 'person' && u.discord_id && u.discord_id === user.discord_id);
+    return person?.id || '';
+  }, [units, user]);
+
+  const [selectedUnit, setSelectedUnit] = useState('');
+
+  /* Set default unit to user's person when units first load */
+  useEffect(() => {
+    if (userPersonId && !selectedUnit) setSelectedUnit(userPersonId);
+  }, [userPersonId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Units grouped under their group for the selector */
   const groupedUnits = useMemo(() => {

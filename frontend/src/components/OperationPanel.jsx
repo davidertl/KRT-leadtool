@@ -535,7 +535,9 @@ function ActiveOperation({ op, missionId }) {
 /* ─── Phases Tab ───────────────────────────────────────── */
 function PhasesTab({ opId, phases }) {
   const [newName, setNewName] = useState('');
-  const { addOperationPhase, updateOperationPhase, removeOperationPhase } = useMissionStore();
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState('');
+  const { tasks, addOperationPhase, updateOperationPhase, removeOperationPhase } = useMissionStore();
 
   const createPhase = async () => {
     if (!newName.trim()) return;
@@ -549,6 +551,20 @@ function PhasesTab({ opId, phases }) {
       if (!res.ok) throw new Error('Failed');
       setNewName('');
     } catch { toast.error('Failed to add phase'); }
+  };
+
+  const renamePhase = async (id) => {
+    if (!editName.trim()) { setEditingId(null); return; }
+    try {
+      const res = await fetch(`/api/operation-phases/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name: editName.trim() }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      setEditingId(null);
+    } catch { toast.error('Failed to rename phase'); }
   };
 
   const toggleStart = async (phase) => {
@@ -591,11 +607,29 @@ function PhasesTab({ opId, phases }) {
       {phases.map((ph, i) => {
         const started = !!ph.actual_start;
         const ended = !!ph.actual_end;
+        const phaseTasks = tasks.filter((t) => t.phase_id === ph.id);
+        const isEditing = editingId === ph.id;
         return (
           <div key={ph.id} className={`p-2 rounded border text-xs ${ended ? 'border-green-800/40 bg-green-900/10' : started ? 'border-yellow-700/40 bg-yellow-900/10' : 'border-krt-border bg-krt-bg/30'}`}>
             <div className="flex items-center gap-1 mb-1">
               <span className="text-gray-500 w-4">{i + 1}.</span>
-              <span className="text-white font-medium flex-1">{ph.name}</span>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={() => renamePhase(ph.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') renamePhase(ph.id); if (e.key === 'Escape') setEditingId(null); }}
+                  className="flex-1 bg-krt-bg border border-krt-accent rounded px-1 py-0.5 text-xs text-white focus:outline-none"
+                  autoFocus
+                />
+              ) : (
+                <span
+                  className="text-white font-medium flex-1 cursor-pointer hover:text-krt-accent"
+                  onDoubleClick={() => { setEditingId(ph.id); setEditName(ph.name); }}
+                  title="Double-click to rename"
+                >{ph.name}</span>
+              )}
               <button onClick={() => deletePhase(ph.id)} className="text-red-600 text-[10px] hover:text-red-400">✕</button>
             </div>
             <div className="flex gap-1">
@@ -612,6 +646,18 @@ function PhasesTab({ opId, phases }) {
                 {ended ? `⏹ ${new Date(ph.actual_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '⏹ End'}
               </button>
             </div>
+            {phaseTasks.length > 0 && (
+              <div className="mt-1.5 pt-1 border-t border-krt-border/50">
+                <span className="text-[10px] text-gray-500 uppercase tracking-wider">Tasks ({phaseTasks.length})</span>
+                {phaseTasks.map((t) => (
+                  <div key={t.id} className="flex items-center gap-1 text-[10px] text-gray-400 mt-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${t.status === 'completed' ? 'bg-green-500' : t.status === 'in_progress' ? 'bg-yellow-500' : 'bg-gray-500'}`} />
+                    <span className="truncate">{t.title}</span>
+                    <span className="ml-auto text-gray-600">{t.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}

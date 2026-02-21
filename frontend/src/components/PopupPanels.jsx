@@ -720,9 +720,10 @@ function GroupsPopup({ missionId }) {
         {showCreate && <CreateGroupForm missionId={missionId} onClose={() => setShowCreate(false)} />}
         {groups.map((group) => {
           const groupUnits = units.filter((u) => u.group_id === group.id);
-          const vehicleCount = groupUnits.filter((u) => u.class_type !== 'person').length;
-          const personCount = groupUnits.filter((u) => u.class_type === 'person').length;
-          return <GroupListItem key={group.id} group={group} vehicleCount={vehicleCount} personCount={personCount} canEdit={canCreate} />;
+          const vehicles = groupUnits.filter((u) => u.unit_type !== 'person');
+          const vehicleIds = new Set(vehicles.map((v) => v.id));
+          const personsAboard = units.filter((p) => p.unit_type === 'person' && p.parent_unit_id && vehicleIds.has(p.parent_unit_id)).length;
+          return <GroupListItem key={group.id} group={group} vehicleCount={vehicles.length} personCount={personsAboard} canEdit={canCreate} />;
         })}
       </div>
     </PopupWindow>
@@ -903,8 +904,8 @@ function PersonListItem({ person, group, isSelected }) {
         </div>
       </div>
       <div className="text-xs text-gray-500 mt-1">
-        {person.role || 'No role'}
-        {parentShip && <span className="ml-1">• Aboard {parentShip.callsign ? `[${parentShip.callsign}]` : parentShip.name}</span>}
+        {person.role && <span>{person.role}</span>}
+        {parentShip && <span className={person.role ? 'ml-1' : ''}>• @ {parentShip.callsign ? `[${parentShip.callsign}]` : parentShip.name}</span>}
         {group && <span className="ml-1">• {group.name}</span>}
       </div>
     </div>

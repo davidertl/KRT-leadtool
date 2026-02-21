@@ -51,20 +51,21 @@ router.post('/', requireAuth, validate(schemas.createGroup), requireMissionMembe
 // Update group
 router.put('/:id', requireAuth, validate(schemas.updateGroup), async (req, res, next) => {
   try {
-    const { name, class_type, color, icon, role, roe, vhf_channel } = req.body;
+    const fields = [];
+    const values = [];
+    const allowedKeys = ['name', 'class_type', 'color', 'icon', 'role', 'roe', 'vhf_channel'];
+    for (const key of allowedKeys) {
+      if (req.body[key] !== undefined) {
+        values.push(req.body[key]);
+        fields.push(`${key} = $${values.length}`);
+      }
+    }
+    if (fields.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+    values.push(req.params.id);
 
     const result = await query(
-      `UPDATE groups SET
-         name = COALESCE($1, name),
-         class_type = COALESCE($2, class_type),
-         color = COALESCE($3, color),
-         icon = COALESCE($4, icon),
-         role = COALESCE($5, role),
-         roe = COALESCE($6, roe),
-         vhf_channel = COALESCE($7, vhf_channel)
-       WHERE id = $8
-       RETURNING *`,
-      [name, class_type, color, icon, role, roe, vhf_channel, req.params.id]
+      `UPDATE groups SET ${fields.join(', ')} WHERE id = $${values.length} RETURNING *`,
+      values
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Group not found' });
 
