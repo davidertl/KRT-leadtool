@@ -176,7 +176,7 @@ export default function SpaceMap() {
   return (
     <Canvas
       camera={{ position: [0, 5000, 15000], fov: 60, near: 0.1, far: 500000 }}
-      style={{ background: '#0a0e1a' }}
+      style={{ background: '#0a0e1a', position: 'relative', zIndex: 0 }}
     >
       <SceneContents />
     </Canvas>

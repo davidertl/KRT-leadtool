@@ -9,19 +9,19 @@ const POPUP_DEFAULTS = {
   units:        { x: 10,  y: 60,  w: 340, h: 520, label: 'Units',         icon: '🚀' },
   persons:      { x: 10,  y: 60,  w: 340, h: 480, label: 'Persons',       icon: '🧑' },
   groups:       { x: 10,  y: 60,  w: 320, h: 420, label: 'Groups',        icon: '👥' },
-  contacts:     { x: 360, y: 60,  w: 340, h: 480, label: 'IFF / Contacts', icon: '📡' },
+  contacts:     { x: 360, y: 60,  w: 340, h: 480, label: 'SPOTREP',         icon: '📡' },
   tasks:        { x: 360, y: 60,  w: 360, h: 520, label: 'Tasks',         icon: '📋' },
   selected:     { x: 10,  y: 60,  w: 340, h: 400, label: 'Selection',     icon: '✅' },
   ops:          { x: 360, y: 60,  w: 380, h: 560, label: 'Operations',    icon: '🎯' },
   comms:        { x: 710, y: 60,  w: 340, h: 500, label: 'Comms',         icon: '📡' },
   log:          { x: 710, y: 60,  w: 380, h: 500, label: 'Event Log',     icon: '📜' },
-  bookmarks:    { x: 710, y: 60,  w: 320, h: 400, label: 'Bookmarks',     icon: '📌' },
+  bookmarks:    { x: 710, y: 60,  w: 320, h: 400, label: 'POI',           icon: '📌' },
   multiplayer:  { x: 710, y: 60,  w: 360, h: 520, label: 'Multiplayer',   icon: '🌐' },
   unitDetail:   { x: 200, y: 100, w: 380, h: 560, label: 'Unit Detail',   icon: '🔍' },
   personDetail: { x: 200, y: 100, w: 360, h: 480, label: 'Person Detail', icon: '🧑' },
 };
 
-let nextZ = 100;
+let nextZ = 1000;
 
 function getNextZ() {
   return ++nextZ;
@@ -35,7 +35,7 @@ for (const [id, def] of Object.entries(POPUP_DEFAULTS)) {
     minimized: false,
     position: { x: def.x, y: def.y },
     size: { w: def.w, h: def.h },
-    zIndex: 10,
+    zIndex: 1000,
     label: def.label,
     icon: def.icon,
   };

@@ -13,6 +13,7 @@ const MSG_BUTTONS = [
   { type: 'in_combat', label: '⚔️ In Combat', color: '#ef4444', desc: 'In combat / active operation' },
   { type: 'heading_home', label: '🔙 Heading Home', color: '#f59e0b', desc: 'Returning to base' },
   { type: 'disabled', label: '💔 Disabled', color: '#dc2626', desc: 'Damaged / out of action' },
+  { type: 'under_attack', label: '🚨 Under Attack', color: '#991b1b', desc: 'Currently under attack' },
 ];
 
 function timeAgo(dateStr) {
@@ -58,7 +59,7 @@ export default function QuickMessages({ missionId }) {
   /** Status message types that trigger unit-status updates when sent via System */
   const STATUS_MSG_TYPES = new Set([
     'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived',
-    'ready_for_orders', 'in_combat', 'heading_home', 'disabled',
+    'ready_for_orders', 'in_combat', 'heading_home', 'disabled', 'under_attack',
   ]);
 
   const sendMessage = async (msgType, message) => {
@@ -117,15 +118,6 @@ export default function QuickMessages({ missionId }) {
 
   return (
     <div className="space-y-3">
-      {/* 🚨 Under Attack — full-width panic button */}
-      <button
-        onClick={() => sendMessage('under_attack', 'UNDER ATTACK!')}
-        disabled={sending}
-        className="w-full py-2 rounded font-bold text-sm bg-red-900/60 border-2 border-red-500 text-red-300 hover:bg-red-800/80 hover:text-white transition-colors disabled:opacity-50 animate-pulse hover:animate-none"
-      >
-        🚨 UNDER ATTACK
-      </button>
-
       {/* Reporting unit — grouped by group */}
       <div>
         <label className="text-xs text-gray-500 block mb-1">Reporting Unit (optional)</label>

@@ -40,6 +40,9 @@ function App() {
         <Route path="/" element={user ? <DashboardPage /> : <Navigate to="/login" />} />
         <Route path="/map/:missionId" element={user ? <MapPage /> : <Navigate to="/login" />} />
       </Routes>
+      <div className="fixed bottom-1 left-1 text-[10px] text-gray-700 pointer-events-none select-none z-[9999]">
+        v{__APP_VERSION__}
+      </div>
     </>
   );
 }

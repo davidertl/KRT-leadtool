@@ -10,17 +10,17 @@ import { useAuthStore } from '../stores/authStore';
  */
 
 const MENU_ITEMS = [
-  { id: 'units',       hotkey: '1' },
-  { id: 'persons',     hotkey: '2' },
-  { id: 'groups',      hotkey: '3' },
-  { id: 'contacts',    hotkey: '4' },
-  { id: 'tasks',       hotkey: '5' },
-  { id: 'selected',    hotkey: '6' },
-  { id: 'ops',         hotkey: '7' },
-  { id: 'comms',       hotkey: '8' },
-  { id: 'log',         hotkey: '9' },
-  { id: 'bookmarks',   hotkey: null },
-  { id: 'multiplayer', hotkey: '0' },
+  { id: 'ops',         hotkey: '1' },
+  { id: 'groups',      hotkey: '2' },
+  { id: 'units',       hotkey: '3' },
+  { id: 'persons',     hotkey: '4' },
+  { id: 'contacts',    hotkey: '5' },
+  { id: 'comms',       hotkey: '6' },
+  { id: 'tasks',       hotkey: '7' },
+  { id: 'log',         hotkey: '8' },
+  { id: 'multiplayer', hotkey: '9' },
+  { id: 'bookmarks',   hotkey: '0' },
+  { id: 'selected',    hotkey: null },
 ];
 
 export default function MenuBar({ onBack }) {

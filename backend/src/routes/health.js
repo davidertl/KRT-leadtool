@@ -5,10 +5,12 @@
 const router = require('express').Router();
 const { pool } = require('../db/postgres');
 const { valkey } = require('../db/valkey');
+const pkg = require('../../package.json');
 
 router.get('/', async (req, res) => {
   const health = {
     status: 'ok',
+    version: pkg.version,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {},
