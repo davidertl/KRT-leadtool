@@ -128,7 +128,7 @@ services:
     volumes:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./postgres/seed_stanton.sql:/docker-entrypoint-initdb.d/02-seed-stanton.sql:ro
-      - ./data/postgres:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
     networks:
       - krt-internal
     healthcheck:
@@ -162,7 +162,7 @@ services:
     restart: unless-stopped
     command: valkey-server --requirepass ${VALKEY_PASSWORD} --appendonly yes --maxmemory 100mb --maxmemory-policy allkeys-lru
     volumes:
-      - ./data/valkey:/data
+      - valkey-data:/data
     networks:
       - krt-internal
     healthcheck:
@@ -187,7 +187,7 @@ services:
     container_name: krt-uptime-kuma
     restart: unless-stopped
     volumes:
-      - ./data/uptime-kuma:/app/data
+      - uptime-kuma-data:/app/data
     networks:
       - krt-internal
     logging:
@@ -262,4 +262,10 @@ volumes:
   certbot-webroot:
     driver: local
   certbot-certs:
+    driver: local
+  postgres-data:
+    driver: local
+  valkey-data:
+    driver: local
+  uptime-kuma-data:
     driver: local
