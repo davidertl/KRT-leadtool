@@ -277,17 +277,17 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         </div>
       )}
 
-      {/* VHF-Freq, Discord ID, Role, Unit Type */}
+      {/* Callsign, Discord ID, Role, Unit Type */}
       <div className="grid grid-cols-2 gap-2">
         {unit.callsign && (
           <div>
-            <label className="text-[10px] text-gray-600">VHF-Freq</label>
+            <label className="text-[10px] text-gray-600">Callsign</label>
             <div className="text-sm text-krt-accent font-mono font-bold">{unit.callsign}</div>
           </div>
         )}
         {unit.vhf_frequency != null && (
           <div>
-            <label className="text-[10px] text-gray-600">VHF Frequency</label>
+            <label className="text-[10px] text-gray-600">Comm Channel</label>
             <div className="text-sm text-krt-accent font-mono font-bold">{unit.vhf_frequency}</div>
           </div>
         )}

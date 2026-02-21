@@ -645,7 +645,7 @@ function CreateUnitForm({ missionId, groups, onClose }) {
           type="text"
           value={callsign}
           onChange={(e) => setCallsign(e.target.value)}
-          placeholder="VHF-Freq (e.g. 148.500)"
+          placeholder="Callsign (e.g. Alpha-1)"
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
         />
       </div>
