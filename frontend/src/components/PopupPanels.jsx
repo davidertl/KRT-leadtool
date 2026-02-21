@@ -283,7 +283,7 @@ function GroupListItem({ group, vehicleCount, personCount, canEdit }) {
 }
 
 /* ─── ContactListItem ──────────────── */
-function ContactListItem({ contact, inactive }) {
+function ContactListItem({ contact, inactive, onEdit, canEdit }) {
   const handleDeactivate = async () => {
     try {
       const res = await fetch(`/api/contacts/${contact.id}`, {
@@ -295,6 +295,7 @@ function ContactListItem({ contact, inactive }) {
   };
 
   const handleDelete = async () => {
+    if (!window.confirm(`Delete contact "${contact.name || 'Unknown'}"? This cannot be undone.`)) return;
     try {
       const res = await fetch(`/api/contacts/${contact.id}`, { method: 'DELETE', credentials: 'include' });
       if (res.ok) { useMissionStore.getState().removeContact(contact.id); toast.success('Contact deleted'); }
@@ -315,6 +316,9 @@ function ContactListItem({ contact, inactive }) {
           )}
         </div>
         <div className="flex gap-1">
+          {canEdit && (
+            <button onClick={() => onEdit && onEdit(contact)} className="text-xs text-gray-500 hover:text-krt-accent" title="Edit">✏️</button>
+          )}
           <button onClick={handleDeactivate} className="text-xs text-gray-500 hover:text-white" title={contact.is_active ? 'Mark inactive' : 'Reactivate'}>
             {contact.is_active ? '👁' : '👁‍🗨'}
           </button>
@@ -728,26 +732,35 @@ function GroupsPopup({ missionId }) {
 function ContactsPopup({ missionId }) {
   const { contacts, myMissionRole } = useMissionStore();
   const [showSpotrep, setShowSpotrep] = useState(false);
+  const [editingContact, setEditingContact] = useState(null);
   const canCreate = myMissionRole === 'gesamtlead' || myMissionRole === 'gruppenlead';
+
+  const handleEdit = (contact) => {
+    setEditingContact(contact);
+    setShowSpotrep(false);
+  };
 
   return (
     <PopupWindow id="contacts">
       <div className="space-y-2">
-        {canCreate && (
-          <button onClick={() => setShowSpotrep(!showSpotrep)} className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1">+ File SPOTREP</button>
+        {canCreate && !editingContact && (
+          <button onClick={() => { setShowSpotrep(!showSpotrep); setEditingContact(null); }} className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1">+ File SPOTREP</button>
         )}
-        {showSpotrep && <SpotrepForm missionId={missionId} onClose={() => setShowSpotrep(false)} />}
-        {contacts.filter((c) => c.is_active).length === 0 && !showSpotrep && (
+        {showSpotrep && !editingContact && <SpotrepForm missionId={missionId} onClose={() => setShowSpotrep(false)} />}
+        {editingContact && (
+          <SpotrepForm missionId={missionId} contact={editingContact} onClose={() => setEditingContact(null)} />
+        )}
+        {contacts.filter((c) => c.is_active).length === 0 && !showSpotrep && !editingContact && (
           <p className="text-gray-500 text-sm text-center py-4">No active contacts.</p>
         )}
         {contacts.filter((c) => c.is_active).map((contact) => (
-          <ContactListItem key={contact.id} contact={contact} />
+          <ContactListItem key={contact.id} contact={contact} onEdit={handleEdit} canEdit={canCreate} />
         ))}
         {contacts.filter((c) => !c.is_active).length > 0 && (
           <div className="pt-2 border-t border-krt-border">
             <p className="text-xs text-gray-600 mb-1">Inactive ({contacts.filter((c) => !c.is_active).length})</p>
             {contacts.filter((c) => !c.is_active).map((contact) => (
-              <ContactListItem key={contact.id} contact={contact} inactive />
+              <ContactListItem key={contact.id} contact={contact} inactive onEdit={handleEdit} canEdit={canCreate} />
             ))}
           </div>
         )}
