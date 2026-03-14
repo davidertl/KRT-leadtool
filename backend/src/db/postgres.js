@@ -29,6 +29,23 @@ async function testConnection() {
   }
 }
 
+async function ensureSchema() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      ALTER TABLE mission_members
+      ADD COLUMN IF NOT EXISTS assigned_unit_ids UUID[] DEFAULT '{}'
+    `);
+    await client.query(`
+      UPDATE mission_members
+      SET assigned_unit_ids = '{}'
+      WHERE assigned_unit_ids IS NULL
+    `);
+  } finally {
+    client.release();
+  }
+}
+
 /**
  * Execute a query with parameterized values
  * @param {string} text - SQL query
@@ -45,4 +62,4 @@ async function query(text, params) {
   return result;
 }
 
-module.exports = { pool, query, testConnection };
+module.exports = { pool, query, testConnection, ensureSchema };

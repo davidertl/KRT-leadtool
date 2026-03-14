@@ -5,8 +5,24 @@ import toast from 'react-hot-toast';
 const ROLE_LABELS = {
   gesamtlead: { label: 'Gesamtlead', color: '#ef4444', desc: 'Full access' },
   gruppenlead: { label: 'Gruppenlead', color: '#f59e0b', desc: 'Manage assigned groups' },
-  teamlead: { label: 'Teamlead', color: '#3b82f6', desc: 'Read-only + comms' },
+  teamlead: { label: 'Teamlead', color: '#3b82f6', desc: 'Manage assigned ships' },
 };
+
+function getManageableGroups(groups, myRole, myAssignedGroups) {
+  if (myRole === 'gesamtlead') return groups;
+  if (myRole === 'gruppenlead') {
+    return groups.filter((group) => myAssignedGroups.includes(group.id));
+  }
+  return [];
+}
+
+function getManageableShips(units, manageableGroups, myRole) {
+  const ships = units.filter((unit) => unit.unit_type === 'ship' || unit.unit_type === 'ground_vehicle');
+  if (myRole === 'gesamtlead') return ships;
+
+  const manageableGroupIds = new Set(manageableGroups.map((group) => group.id));
+  return ships.filter((ship) => ship.group_id && manageableGroupIds.has(ship.group_id));
+}
 
 /** Badge for a mission role */
 function RoleBadge({ role }) {
@@ -22,8 +38,10 @@ function RoleBadge({ role }) {
 }
 
 export default function MultiplayerPanel({ missionId }) {
-  const { members, joinRequests, groups, myMissionRole, onlineUsers, removeJoinRequest, addJoinRequest } = useMissionStore();
+  const { members, joinRequests, groups, units, myMissionRole, myAssignedGroups, onlineUsers, removeJoinRequest, addJoinRequest } = useMissionStore();
   const canManage = myMissionRole === 'gesamtlead' || myMissionRole === 'gruppenlead';
+  const manageableGroups = getManageableGroups(groups, myMissionRole, myAssignedGroups);
+  const manageableShips = getManageableShips(units, manageableGroups, myMissionRole);
 
   return (
     <div className="space-y-4">
@@ -44,7 +62,7 @@ export default function MultiplayerPanel({ missionId }) {
           </label>
           <div className="space-y-2">
             {joinRequests.map((jr) => (
-              <JoinRequestCard key={jr.id} jr={jr} missionId={missionId} groups={groups} myRole={myMissionRole} />
+              <JoinRequestCard key={jr.id} jr={jr} missionId={missionId} groups={manageableGroups} ships={manageableShips} myRole={myMissionRole} />
             ))}
           </div>
         </div>
@@ -57,7 +75,7 @@ export default function MultiplayerPanel({ missionId }) {
         </label>
         <div className="space-y-1">
           {members.map((m) => (
-            <MemberRow key={m.user_id} member={m} missionId={missionId} groups={groups} onlineUsers={onlineUsers} myRole={myMissionRole} />
+            <MemberRow key={m.user_id} member={m} missionId={missionId} groups={manageableGroups} ships={manageableShips} allGroups={groups} allShips={getManageableShips(units, groups, 'gesamtlead')} onlineUsers={onlineUsers} myRole={myMissionRole} />
           ))}
         </div>
       </div>
@@ -258,9 +276,10 @@ function JoinCodeSection({ missionId }) {
 }
 
 /** Card for a pending join request */
-function JoinRequestCard({ jr, missionId, groups, myRole }) {
+function JoinRequestCard({ jr, missionId, groups, ships, myRole }) {
   const [selectedRole, setSelectedRole] = useState('teamlead');
   const [selectedGroups, setSelectedGroups] = useState([]);
+  const [selectedUnits, setSelectedUnits] = useState([]);
   const [busy, setBusy] = useState(false);
   const { removeJoinRequest, setMembers, members } = useMissionStore();
 
@@ -273,7 +292,8 @@ function JoinRequestCard({ jr, missionId, groups, myRole }) {
         credentials: 'include',
         body: JSON.stringify({
           mission_role: selectedRole,
-          assigned_group_ids: selectedGroups,
+          assigned_group_ids: selectedRole === 'gruppenlead' ? selectedGroups : [],
+          assigned_unit_ids: selectedRole === 'teamlead' ? selectedUnits : [],
         }),
       });
       if (!res.ok) {
@@ -312,6 +332,12 @@ function JoinRequestCard({ jr, missionId, groups, myRole }) {
     );
   };
 
+  const toggleUnit = (unitId) => {
+    setSelectedUnits((prev) =>
+      prev.includes(unitId) ? prev.filter((id) => id !== unitId) : [...prev, unitId]
+    );
+  };
+
   const availableRoles = myRole === 'gesamtlead'
     ? ['gesamtlead', 'gruppenlead', 'teamlead']
     : ['teamlead']; // gruppenlead can only assign teamlead
@@ -332,7 +358,15 @@ function JoinRequestCard({ jr, missionId, groups, myRole }) {
         {availableRoles.map((r) => (
           <button
             key={r}
-            onClick={() => setSelectedRole(r)}
+            onClick={() => {
+              setSelectedRole(r);
+              if (r === 'gruppenlead') setSelectedUnits([]);
+              if (r === 'teamlead') setSelectedGroups([]);
+              if (r === 'gesamtlead') {
+                setSelectedGroups([]);
+                setSelectedUnits([]);
+              }
+            }}
             className={`text-xs px-2 py-1 rounded transition-colors ${
               selectedRole === r
                 ? 'text-white'
@@ -345,23 +379,15 @@ function JoinRequestCard({ jr, missionId, groups, myRole }) {
         ))}
       </div>
 
-      {/* Group assignment (for gruppenlead / teamlead) */}
-      {(selectedRole === 'gruppenlead' || selectedRole === 'teamlead') && groups.length > 0 && (
+      {/* Group assignment */}
+      {selectedRole === 'gruppenlead' && groups.length > 0 && (
         <div>
-          <label className="text-xs text-gray-500 block mb-1">
-            Assign to {selectedRole === 'teamlead' ? 'group' : 'groups'}:
-          </label>
+          <label className="text-xs text-gray-500 block mb-1">Assign groups:</label>
           <div className="flex flex-wrap gap-1">
             {groups.map((g) => (
               <button
                 key={g.id}
-                onClick={() => {
-                  if (selectedRole === 'teamlead') {
-                    setSelectedGroups([g.id]); // teamlead gets exactly one
-                  } else {
-                    toggleGroup(g.id);
-                  }
-                }}
+                onClick={() => toggleGroup(g.id)}
                 className={`text-xs px-2 py-1 rounded-full transition-colors ${
                   selectedGroups.includes(g.id)
                     ? 'text-white border border-transparent'
@@ -370,6 +396,29 @@ function JoinRequestCard({ jr, missionId, groups, myRole }) {
                 style={selectedGroups.includes(g.id) ? { backgroundColor: g.color } : {}}
               >
                 {g.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Ship assignment */}
+      {selectedRole === 'teamlead' && ships.length > 0 && (
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Assign ships:</label>
+          <div className="flex flex-wrap gap-1">
+            {ships.map((ship) => (
+              <button
+                key={ship.id}
+                onClick={() => toggleUnit(ship.id)}
+                className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                  selectedUnits.includes(ship.id)
+                    ? 'text-white border border-transparent'
+                    : 'text-gray-400 bg-krt-panel border border-krt-border hover:text-white'
+                }`}
+                style={selectedUnits.includes(ship.id) ? { backgroundColor: '#3b82f6' } : {}}
+              >
+                {ship.callsign ? `[${ship.callsign}] ` : ''}{ship.name}
               </button>
             ))}
           </div>
@@ -398,10 +447,11 @@ function JoinRequestCard({ jr, missionId, groups, myRole }) {
 }
 
 /** Single member row with role editing */
-function MemberRow({ member, missionId, groups, onlineUsers, myRole }) {
+function MemberRow({ member, missionId, groups, ships, allGroups, allShips, onlineUsers, myRole }) {
   const [editing, setEditing] = useState(false);
   const [role, setRole] = useState(member.mission_role || 'teamlead');
   const [assignedGroups, setAssignedGroups] = useState(member.assigned_group_ids || []);
+  const [assignedUnits, setAssignedUnits] = useState(member.assigned_unit_ids || []);
   const [busy, setBusy] = useState(false);
   const { updateMember, removeMember, setMembers, members } = useMissionStore();
 
@@ -415,10 +465,19 @@ function MemberRow({ member, missionId, groups, onlineUsers, myRole }) {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ mission_role: role, assigned_group_ids: assignedGroups }),
+        body: JSON.stringify({
+          mission_role: role,
+          assigned_group_ids: role === 'gruppenlead' ? assignedGroups : [],
+          assigned_unit_ids: role === 'teamlead' ? assignedUnits : [],
+        }),
       });
       if (!res.ok) throw new Error('Failed');
-      updateMember({ user_id: member.user_id, mission_role: role, assigned_group_ids: assignedGroups });
+      updateMember({
+        user_id: member.user_id,
+        mission_role: role,
+        assigned_group_ids: role === 'gruppenlead' ? assignedGroups : [],
+        assigned_unit_ids: role === 'teamlead' ? assignedUnits : [],
+      });
       setEditing(false);
       toast.success('Role updated');
     } catch {
@@ -444,6 +503,12 @@ function MemberRow({ member, missionId, groups, onlineUsers, myRole }) {
   const toggleGroup = (gId) => {
     setAssignedGroups((prev) =>
       prev.includes(gId) ? prev.filter((id) => id !== gId) : [...prev, gId]
+    );
+  };
+
+  const toggleUnit = (unitId) => {
+    setAssignedUnits((prev) =>
+      prev.includes(unitId) ? prev.filter((id) => id !== unitId) : [...prev, unitId]
     );
   };
 
@@ -473,10 +538,23 @@ function MemberRow({ member, missionId, groups, onlineUsers, myRole }) {
       {(member.assigned_group_ids || []).length > 0 && !editing && (
         <div className="flex flex-wrap gap-1 mt-1">
           {member.assigned_group_ids.map((gId) => {
-            const g = groups.find((gr) => gr.id === gId);
+            const g = allGroups.find((gr) => gr.id === gId);
             return g ? (
               <span key={gId} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: g.color + '30', color: g.color }}>
                 {g.name}
+              </span>
+            ) : null;
+          })}
+        </div>
+      )}
+
+      {(member.assigned_unit_ids || []).length > 0 && !editing && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {member.assigned_unit_ids.map((unitId) => {
+            const ship = allShips.find((candidate) => candidate.id === unitId);
+            return ship ? (
+              <span key={unitId} className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300">
+                {ship.callsign ? `[${ship.callsign}] ` : ''}{ship.name}
               </span>
             ) : null;
           })}
@@ -490,7 +568,15 @@ function MemberRow({ member, missionId, groups, onlineUsers, myRole }) {
             {(myRole === 'gesamtlead' ? ['gesamtlead', 'gruppenlead', 'teamlead'] : ['teamlead']).map((r) => (
               <button
                 key={r}
-                onClick={() => setRole(r)}
+                onClick={() => {
+                  setRole(r);
+                  if (r === 'gruppenlead') setAssignedUnits([]);
+                  if (r === 'teamlead') setAssignedGroups([]);
+                  if (r === 'gesamtlead') {
+                    setAssignedGroups([]);
+                    setAssignedUnits([]);
+                  }
+                }}
                 className={`text-xs px-2 py-1 rounded transition-colors ${
                   role === r ? 'text-white' : 'text-gray-400 bg-krt-panel border border-krt-border hover:text-white'
                 }`}
@@ -500,15 +586,12 @@ function MemberRow({ member, missionId, groups, onlineUsers, myRole }) {
               </button>
             ))}
           </div>
-          {(role === 'gruppenlead' || role === 'teamlead') && groups.length > 0 && (
+          {role === 'gruppenlead' && groups.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {groups.map((g) => (
                 <button
                   key={g.id}
-                  onClick={() => {
-                    if (role === 'teamlead') setAssignedGroups([g.id]);
-                    else toggleGroup(g.id);
-                  }}
+                  onClick={() => toggleGroup(g.id)}
                   className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
                     assignedGroups.includes(g.id)
                       ? 'text-white border border-transparent'
@@ -517,6 +600,24 @@ function MemberRow({ member, missionId, groups, onlineUsers, myRole }) {
                   style={assignedGroups.includes(g.id) ? { backgroundColor: g.color } : {}}
                 >
                   {g.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {role === 'teamlead' && ships.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {ships.map((ship) => (
+                <button
+                  key={ship.id}
+                  onClick={() => toggleUnit(ship.id)}
+                  className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                    assignedUnits.includes(ship.id)
+                      ? 'text-white border border-transparent'
+                      : 'text-gray-400 bg-krt-panel border border-krt-border'
+                  }`}
+                  style={assignedUnits.includes(ship.id) ? { backgroundColor: '#3b82f6' } : {}}
+                >
+                  {ship.callsign ? `[${ship.callsign}] ` : ''}{ship.name}
                 </button>
               ))}
             </div>

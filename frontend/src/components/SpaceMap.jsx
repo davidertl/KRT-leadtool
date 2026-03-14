@@ -63,6 +63,7 @@ function SceneContents() {
   const { units, groups, waypoints, contacts, tasks, navData, selectedUnitIds } = useMissionStore();
   const controlsRef = useRef();
   const [isDragging, setIsDragging] = useState(false);
+  const visibleUnits = units.filter((unit) => !(unit.unit_type === 'person' && unit.parent_unit_id));
 
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
@@ -98,7 +99,7 @@ function SceneContents() {
       />
 
       {/* Unit markers */}
-      {units.map((unit) => {
+      {visibleUnits.map((unit) => {
         const group = groups.find((g) => g.id === unit.group_id);
         return (
           <UnitMarker
@@ -113,7 +114,7 @@ function SceneContents() {
       })}
 
       {/* Waypoint lines */}
-      {units.map((unit) => {
+      {visibleUnits.map((unit) => {
         const unitWaypoints = waypoints.filter((w) => w.unit_id === unit.id);
         if (unitWaypoints.length === 0) return null;
         return <WaypointLine key={`wp-${unit.id}`} unit={unit} waypoints={unitWaypoints} />;

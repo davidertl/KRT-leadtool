@@ -5,8 +5,59 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { requireMissionMember } = require('../auth/teamAuth');
+const { requireMissionMember, getUnitsByIdsForMission, isSubsetOf, normalizeUuidArray } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
+
+async function groupsExistInMission(missionId, groupIds) {
+  const ids = normalizeUuidArray(groupIds);
+  if (ids.length === 0) return true;
+
+  const result = await query(
+    `SELECT id FROM groups WHERE mission_id = $1 AND id = ANY($2::uuid[])`,
+    [missionId, ids]
+  );
+
+  return result.rows.length === ids.length;
+}
+
+async function sanitizeAssignments(req, missionId, targetRole, rawGroupIds, rawUnitIds) {
+  const assignedGroupIds = Array.from(new Set(normalizeUuidArray(rawGroupIds)));
+  const assignedUnitIds = Array.from(new Set(normalizeUuidArray(rawUnitIds)));
+
+  if (targetRole === 'gesamtlead') {
+    return { assignedGroupIds: [], assignedUnitIds: [] };
+  }
+
+  if (targetRole === 'gruppenlead') {
+    if (assignedUnitIds.length > 0) {
+      return { error: 'Gruppenlead assignments cannot include ships' };
+    }
+    if (!(await groupsExistInMission(missionId, assignedGroupIds))) {
+      return { error: 'One or more assigned groups are invalid' };
+    }
+    if (req.missionRole === 'gruppenlead' && !isSubsetOf(assignedGroupIds, req.assignedGroups)) {
+      return { error: 'Gruppenlead can only assign groups they manage' };
+    }
+    return { assignedGroupIds, assignedUnitIds: [] };
+  }
+
+  if (assignedGroupIds.length > 0) {
+    return { error: 'Teamlead assignments use ships, not groups' };
+  }
+
+  const ships = await getUnitsByIdsForMission(missionId, assignedUnitIds);
+  if (ships.length !== assignedUnitIds.length) {
+    return { error: 'One or more assigned ships are invalid' };
+  }
+  if (ships.some((ship) => !['ship', 'ground_vehicle'].includes(ship.unit_type))) {
+    return { error: 'Teamlead assignments must reference ships or ground vehicles' };
+  }
+  if (req.missionRole === 'gruppenlead' && ships.some((ship) => !req.assignedGroups.includes(ship.group_id))) {
+    return { error: 'Gruppenlead can only assign ships inside their groups' };
+  }
+
+  return { assignedGroupIds: [], assignedUnitIds };
+}
 
 // ---- Join by code (creates a join request) ----
 router.post('/join', requireAuth, async (req, res, next) => {
@@ -69,7 +120,7 @@ router.post('/:mission_id/requests/:requestId/accept', requireAuth, requireMissi
       }
     }
 
-    const { mission_role, assigned_group_ids } = req.body;
+    const { mission_role, assigned_group_ids, assigned_unit_ids } = req.body;
     const validRoles = ['gesamtlead', 'gruppenlead', 'teamlead'];
     if (!validRoles.includes(mission_role)) {
       return res.status(400).json({ error: 'mission_role must be gesamtlead, gruppenlead, or teamlead' });
@@ -82,6 +133,17 @@ router.post('/:mission_id/requests/:requestId/accept', requireAuth, requireMissi
       }
     }
 
+    const sanitized = await sanitizeAssignments(
+      req,
+      req.params.mission_id,
+      mission_role,
+      assigned_group_ids,
+      assigned_unit_ids
+    );
+    if (sanitized.error) {
+      return res.status(400).json({ error: sanitized.error });
+    }
+
     // Fetch the request
     const jr = await query('SELECT * FROM join_requests WHERE id = $1 AND mission_id = $2 AND status = $3', [req.params.requestId, req.params.mission_id, 'pending']);
     if (jr.rows.length === 0) return res.status(404).json({ error: 'Join request not found or already handled' });
@@ -92,10 +154,14 @@ router.post('/:mission_id/requests/:requestId/accept', requireAuth, requireMissi
 
     // Add as mission member
     await query(
-      `INSERT INTO mission_members (mission_id, user_id, role, mission_role, assigned_group_ids)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (mission_id, user_id) DO UPDATE SET role = EXCLUDED.role, mission_role = EXCLUDED.mission_role, assigned_group_ids = EXCLUDED.assigned_group_ids`,
-      [req.params.mission_id, request.user_id, sysRole, mission_role, assigned_group_ids || []]
+      `INSERT INTO mission_members (mission_id, user_id, role, mission_role, assigned_group_ids, assigned_unit_ids)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (mission_id, user_id) DO UPDATE SET
+         role = EXCLUDED.role,
+         mission_role = EXCLUDED.mission_role,
+         assigned_group_ids = EXCLUDED.assigned_group_ids,
+         assigned_unit_ids = EXCLUDED.assigned_unit_ids`,
+      [req.params.mission_id, request.user_id, sysRole, mission_role, sanitized.assignedGroupIds, sanitized.assignedUnitIds]
     );
 
     // Mark request as accepted
@@ -104,7 +170,12 @@ router.post('/:mission_id/requests/:requestId/accept', requireAuth, requireMissi
       [req.user.id, req.params.requestId]
     );
 
-    broadcastToMission(req.params.mission_id, 'member:accepted', { user_id: request.user_id, mission_role });
+    broadcastToMission(req.params.mission_id, 'member:accepted', {
+      user_id: request.user_id,
+      mission_role,
+      assigned_group_ids: sanitized.assignedGroupIds,
+      assigned_unit_ids: sanitized.assignedUnitIds,
+    });
 
     res.json({ message: 'Join request accepted' });
   } catch (err) { next(err); }
@@ -146,19 +217,42 @@ router.get('/:mission_id/members', requireAuth, requireMissionMember, async (req
 // ---- Update a member's role / assigned groups ----
 router.put('/:mission_id/members/:userId', requireAuth, requireMissionMember, async (req, res, next) => {
   try {
-    const { mission_role, assigned_group_ids } = req.body;
+    const { mission_role, assigned_group_ids, assigned_unit_ids } = req.body;
 
-    // Only gesamtlead can change roles
+    const target = await query(
+      'SELECT mission_role FROM mission_members WHERE mission_id = $1 AND user_id = $2',
+      [req.params.mission_id, req.params.userId]
+    );
+    if (target.rows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+    const nextRole = mission_role || target.rows[0].mission_role;
+
+    // Only gesamtlead can change most roles
     if (req.missionRole !== 'gesamtlead') {
-      // Gruppenlead can only update teamlead assignments in their groups
       if (req.missionRole === 'gruppenlead') {
-        const target = await query('SELECT mission_role FROM mission_members WHERE mission_id = $1 AND user_id = $2', [req.params.mission_id, req.params.userId]);
-        if (target.rows.length === 0) return res.status(404).json({ error: 'Member not found' });
-        if (target.rows[0].mission_role !== 'teamlead') {
+        if (target.rows[0].mission_role !== 'teamlead' || nextRole !== 'teamlead') {
           return res.status(403).json({ error: 'Gruppenlead can only manage Teamleads' });
         }
       } else {
         return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+    }
+
+    const shouldUpdateAssignments = mission_role !== undefined
+      || assigned_group_ids !== undefined
+      || assigned_unit_ids !== undefined;
+
+    let sanitized = null;
+    if (shouldUpdateAssignments) {
+      sanitized = await sanitizeAssignments(
+        req,
+        req.params.mission_id,
+        nextRole,
+        assigned_group_ids !== undefined ? assigned_group_ids : [],
+        assigned_unit_ids !== undefined ? assigned_unit_ids : []
+      );
+      if (sanitized.error) {
+        return res.status(400).json({ error: sanitized.error });
       }
     }
 
@@ -170,9 +264,11 @@ router.put('/:mission_id/members/:userId', requireAuth, requireMissionMember, as
       updates.push(`mission_role = $${idx++}`);
       values.push(mission_role);
     }
-    if (assigned_group_ids !== undefined) {
+    if (shouldUpdateAssignments) {
       updates.push(`assigned_group_ids = $${idx++}`);
-      values.push(assigned_group_ids);
+      values.push(sanitized.assignedGroupIds);
+      updates.push(`assigned_unit_ids = $${idx++}`);
+      values.push(sanitized.assignedUnitIds);
     }
 
     if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
@@ -183,7 +279,12 @@ router.put('/:mission_id/members/:userId', requireAuth, requireMissionMember, as
       values
     );
 
-    broadcastToMission(req.params.mission_id, 'member:updated', { user_id: req.params.userId, mission_role, assigned_group_ids });
+    broadcastToMission(req.params.mission_id, 'member:updated', {
+      user_id: req.params.userId,
+      mission_role: nextRole,
+      assigned_group_ids: sanitized?.assignedGroupIds,
+      assigned_unit_ids: sanitized?.assignedUnitIds,
+    });
 
     res.json({ message: 'Member updated' });
   } catch (err) { next(err); }

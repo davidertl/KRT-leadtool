@@ -5,11 +5,17 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
+const { ensureMissionMember, canEditUnit, getUnitAccessContext } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
 
 // Get history for a unit
 router.get('/:unit_id', requireAuth, async (req, res, next) => {
   try {
+    const unitAccess = await getUnitAccessContext(req.params.unit_id);
+    if (!unitAccess) return res.status(404).json({ error: 'Unit not found' });
+    const isMember = await ensureMissionMember(req, unitAccess.mission_id);
+    if (!isMember) return res.status(403).json({ error: 'You are not a member of this mission' });
+
     const { limit } = req.query;
     const result = await query(
       `SELECT sh.*, u2.username AS changed_by_name
@@ -27,6 +33,14 @@ router.get('/:unit_id', requireAuth, async (req, res, next) => {
 // Undo last change for a unit
 router.post('/:unit_id/undo', requireAuth, async (req, res, next) => {
   try {
+    const unitAccess = await getUnitAccessContext(req.params.unit_id);
+    if (!unitAccess) return res.status(404).json({ error: 'Unit not found' });
+    const isMember = await ensureMissionMember(req, unitAccess.mission_id);
+    if (!isMember) return res.status(403).json({ error: 'You are not a member of this mission' });
+    if (req.missionRole === 'teamlead' || !(await canEditUnit(req, unitAccess))) {
+      return res.status(403).json({ error: 'Insufficient permissions to undo this change' });
+    }
+
     // Get the most recent history entry
     const histResult = await query(
       `SELECT * FROM status_history

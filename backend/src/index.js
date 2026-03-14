@@ -8,7 +8,7 @@ require('dotenv').config();
 const http = require('http');
 const app = require('./app');
 const { initSocketIO } = require('./socket');
-const { testConnection: testDB } = require('./db/postgres');
+const { testConnection: testDB, ensureSchema } = require('./db/postgres');
 const { testConnection: testValkey } = require('./db/valkey');
 const { seedNavigation } = require('./db/seed');
 
@@ -18,6 +18,7 @@ async function start() {
   // Test database connections
   await testDB();
   await testValkey();
+  await ensureSchema();
 
   // Seed navigation data (idempotent — safe on every startup)
   await seedNavigation();

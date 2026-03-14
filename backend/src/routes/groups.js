@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { requireMissionMember } = require('../auth/teamAuth');
+const { requireMissionMember, requireGesamtlead, ensureMissionMember } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
 const { validate } = require('../validation/middleware');
 const { schemas } = require('../validation/schemas');
@@ -31,7 +31,7 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
 });
 
 // Create group
-router.post('/', requireAuth, validate(schemas.createGroup), requireMissionMember, async (req, res, next) => {
+router.post('/', requireAuth, validate(schemas.createGroup), requireMissionMember, requireGesamtlead, async (req, res, next) => {
   try {
     const { name, mission_id, class_type, color, icon, role, roe, vhf_channel } = req.body;
     if (!name || !mission_id) return res.status(400).json({ error: 'name and mission_id are required' });
@@ -51,6 +51,15 @@ router.post('/', requireAuth, validate(schemas.createGroup), requireMissionMembe
 // Update group
 router.put('/:id', requireAuth, validate(schemas.updateGroup), async (req, res, next) => {
   try {
+    const existing = await query('SELECT id, mission_id FROM groups WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Group not found' });
+    const group = existing.rows[0];
+    const isMember = await ensureMissionMember(req, group.mission_id);
+    if (!isMember) return res.status(403).json({ error: 'You are not a member of this mission' });
+    if (req.missionRole !== 'gesamtlead') {
+      return res.status(403).json({ error: 'Only Gesamtlead can update groups' });
+    }
+
     const fields = [];
     const values = [];
     const allowedKeys = ['name', 'class_type', 'color', 'icon', 'role', 'roe', 'vhf_channel'];
@@ -77,6 +86,15 @@ router.put('/:id', requireAuth, validate(schemas.updateGroup), async (req, res, 
 // Delete group
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
+    const existing = await query('SELECT id, mission_id FROM groups WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Group not found' });
+    const group = existing.rows[0];
+    const isMember = await ensureMissionMember(req, group.mission_id);
+    if (!isMember) return res.status(403).json({ error: 'You are not a member of this mission' });
+    if (req.missionRole !== 'gesamtlead') {
+      return res.status(403).json({ error: 'Only Gesamtlead can delete groups' });
+    }
+
     const result = await query(
       'DELETE FROM groups WHERE id = $1 RETURNING id, mission_id',
       [req.params.id]

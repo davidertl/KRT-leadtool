@@ -18,7 +18,7 @@ function generateJoinCode() {
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const result = await query(
-      `SELECT m.*, mm.role AS member_role, mm.mission_role, mm.assigned_group_ids
+      `SELECT m.*, mm.role AS member_role, mm.mission_role, mm.assigned_group_ids, mm.assigned_unit_ids
        FROM missions m
        JOIN mission_members mm ON mm.mission_id = m.id
        WHERE mm.user_id = $1
@@ -50,7 +50,7 @@ router.get('/public', requireAuth, async (req, res, next) => {
 router.get('/:id', requireAuth, async (req, res, next) => {
   try {
     const result = await query(
-      `SELECT m.*, mm.role AS member_role, mm.mission_role, mm.assigned_group_ids
+      `SELECT m.*, mm.role AS member_role, mm.mission_role, mm.assigned_group_ids, mm.assigned_unit_ids
        FROM missions m
        JOIN mission_members mm ON mm.mission_id = m.id
        WHERE m.id = $1 AND mm.user_id = $2`,

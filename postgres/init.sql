@@ -317,6 +317,7 @@ CREATE TABLE mission_members (
     role                user_role NOT NULL DEFAULT 'member',
     mission_role        mission_role DEFAULT 'teamlead',
     assigned_group_ids  UUID[] DEFAULT '{}',          -- groups this member can manage
+    assigned_unit_ids   UUID[] DEFAULT '{}',          -- ships this teamlead can manage
     joined_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (mission_id, user_id)
 );

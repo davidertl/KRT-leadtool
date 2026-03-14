@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { requireMissionMember } = require('../auth/teamAuth');
+const { requireMissionMember, canEditUnit, getUnitAccessContext } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
 const { z } = require('zod');
 const { validate } = require('../validation/middleware');
@@ -58,6 +58,22 @@ router.post('/', requireAuth, validate(createMessage), requireMissionMember, asy
     let updatedUnits = []; // track all units whose status changed (for broadcasting)
 
     if (isStatusMsg && unit_id) {
+      const unitAccess = await getUnitAccessContext(unit_id);
+      if (!unitAccess || unitAccess.mission_id !== mission_id) {
+        return res.status(400).json({ error: 'Selected unit does not belong to this mission' });
+      }
+      if (!(await canEditUnit(req, unitAccess))) {
+        return res.status(403).json({ error: 'Insufficient permissions to update this unit status' });
+      }
+
+      const previousUnit = await query(
+        `SELECT id, status, unit_type, parent_unit_id
+         FROM units
+         WHERE id = $1`,
+        [unit_id]
+      );
+      const oldStatus = previousUnit.rows[0]?.status ?? null;
+
       // 1. Update the reporting unit's status
       const unitRes = await query(
         `UPDATE units SET status = $1 WHERE id = $2 RETURNING *`,
@@ -72,7 +88,7 @@ router.post('/', requireAuth, validate(createMessage), requireMissionMember, asy
         await query(
           `INSERT INTO status_history (unit_id, field_changed, old_value, new_value, changed_by)
            VALUES ($1, 'status', $2, $3, $4)`,
-          [unit_id, JSON.stringify(updatedUnit.status), JSON.stringify(message_type), req.user.id]
+          [unit_id, JSON.stringify(oldStatus), JSON.stringify(message_type), req.user.id]
         ).catch(() => {}); // non-critical
 
         // 2. If the unit is a person aboard a ship, check ship auto-aggregate

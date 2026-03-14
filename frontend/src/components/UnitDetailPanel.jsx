@@ -4,6 +4,9 @@ import { useVehicleData } from '../hooks/useVehicleData';
 import { STATUS_OPTIONS, STATUS_COLORS, ROE_LABELS } from '../lib/constants';
 import toast from 'react-hot-toast';
 
+const MAP_SCALE = 1e6;
+const SPAWNABLE_NAV_TYPES = ['station', 'rest_stop', 'outpost'];
+
 function ResourceBar({ label, value, color, warning = 25 }) {
   const pct = Math.max(0, Math.min(100, value ?? 100));
   const isLow = pct <= warning;
@@ -25,7 +28,7 @@ function ResourceBar({ label, value, color, warning = 25 }) {
  * Detailed panel for a single selected unit — shows info, position, history, and edit controls
  */
 export default function UnitDetailPanel({ unitId, onClose }) {
-  const { units, groups, waypoints, tasks, contacts, focusUnit } = useMissionStore();
+  const { units, groups, waypoints, tasks, contacts, navData, focusUnit, canEditUnit: canEditUnitInStore, canEdit, canAssignShip, myMissionRole } = useMissionStore();
   const unit = units.find((u) => u.id === unitId);
   const group = unit ? groups.find((g) => g.id === unit.group_id) : null;
   const unitWaypoints = unit ? waypoints.filter((w) => w.unit_id === unit.id).sort((a, b) => a.sequence - b.sequence) : [];
@@ -42,15 +45,25 @@ export default function UnitDetailPanel({ unitId, onClose }) {
   const [editHull, setEditHull] = useState(100);
   const [editCrewCount, setEditCrewCount] = useState(1);
   const [editCrewMax, setEditCrewMax] = useState('');
+  const [editPosX, setEditPosX] = useState('0');
+  const [editPosY, setEditPosY] = useState('0');
+  const [editPosZ, setEditPosZ] = useState('0');
+  const [editStationId, setEditStationId] = useState('');
   const { imageUrl, thumbnailUrl, loading: imgLoading, license, vehicleData } = useVehicleData(unit?.ship_type);
 
   // Permission check
-  const canEditUnit = useMissionStore.getState().canEdit(unit?.group_id);
+  const canEditSelectedUnit = canEditUnitInStore(unit);
+  const canDeleteUnit = canEditSelectedUnit && myMissionRole !== 'teamlead';
 
   // For person-to-ship transfers
   const parentShip = unit?.parent_unit_id ? units.find((u) => u.id === unit.parent_unit_id) : null;
   const ships = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === unit?.mission_id);
+  const editableGroups = myMissionRole === 'gesamtlead' ? groups : groups.filter((candidate) => canEdit(candidate.id));
+  const accessibleShips = ships.filter((ship) => canAssignShip(ship.id) || ship.id === unit?.parent_unit_id);
   const personsAboard = unit ? units.filter((u) => u.parent_unit_id === unit.id) : [];
+  const spawnLocations = (navData?.points || [])
+    .filter((point) => SPAWNABLE_NAV_TYPES.includes(point.nav_type) && point.active !== false)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   useEffect(() => {
     if (!unit) return;
@@ -65,13 +78,17 @@ export default function UnitDetailPanel({ unitId, onClose }) {
     setEditHull(unit.hull ?? 100);
     setEditCrewCount(unit.crew_count ?? 1);
     setEditCrewMax(unit.crew_max ?? '');
+    setEditPosX(String(unit.pos_x ?? 0));
+    setEditPosY(String(unit.pos_y ?? 0));
+    setEditPosZ(String(unit.pos_z ?? 0));
+    setEditStationId('');
 
     // Fetch history
     fetch(`/api/history/${unit.id}?limit=10`, { credentials: 'include' })
       .then((r) => r.json())
       .then((data) => setHistory(Array.isArray(data) ? data : []))
       .catch(() => {});
-  }, [unitId, unit?.name, unit?.notes]);
+  }, [unitId, unit?.name, unit?.notes, unit?.callsign, unit?.role, unit?.roe, unit?.group_id, unit?.fuel, unit?.ammo, unit?.hull, unit?.crew_count, unit?.crew_max, unit?.pos_x, unit?.pos_y, unit?.pos_z]);
 
   if (!unit) {
     return (
@@ -117,6 +134,9 @@ export default function UnitDetailPanel({ unitId, onClose }) {
         payload.hull = Number(editHull);
         payload.crew_count = Number(editCrewCount) || 1;
         payload.crew_max = editCrewMax ? Number(editCrewMax) : null;
+        payload.pos_x = editPosX !== '' ? Number(editPosX) : unit.pos_x;
+        payload.pos_y = editPosY !== '' ? Number(editPosY) : unit.pos_y;
+        payload.pos_z = editPosZ !== '' ? Number(editPosZ) : unit.pos_z;
       }
       const res = await fetch(`/api/units/${unit.id}`, {
         method: 'PUT',
@@ -183,6 +203,16 @@ export default function UnitDetailPanel({ unitId, onClose }) {
     } catch {
       toast.error('Failed to transfer person');
     }
+  };
+
+  const handleStationChange = (stationId) => {
+    setEditStationId(stationId);
+    const station = spawnLocations.find((point) => point.id === stationId);
+    if (!station) return;
+
+    setEditPosX(String((station.pos_x || 0) / MAP_SCALE));
+    setEditPosY(String((station.pos_y || 0) / MAP_SCALE));
+    setEditPosZ(String((station.pos_z || 0) / MAP_SCALE));
   };
 
   return (
@@ -323,12 +353,58 @@ export default function UnitDetailPanel({ unitId, onClose }) {
             </div>
           </div>
           )}
+          {!isPerson && (
+            <div>
+              <label className="text-[10px] text-gray-600 block mb-1">Position</label>
+              <select
+                value={editStationId}
+                onChange={(e) => handleStationChange(e.target.value)}
+                className="w-full mb-2 bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+              >
+                <option value="">Fill from station…</option>
+                {spawnLocations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name} ({location.nav_type.replace('_', ' ')})
+                  </option>
+                ))}
+              </select>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  type="number"
+                  step="any"
+                  value={editPosX}
+                  onChange={(e) => { setEditPosX(e.target.value); setEditStationId(''); }}
+                  placeholder="X"
+                  className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+                />
+                <input
+                  type="number"
+                  step="any"
+                  value={editPosY}
+                  onChange={(e) => { setEditPosY(e.target.value); setEditStationId(''); }}
+                  placeholder="Y"
+                  className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+                />
+                <input
+                  type="number"
+                  step="any"
+                  value={editPosZ}
+                  onChange={(e) => { setEditPosZ(e.target.value); setEditStationId(''); }}
+                  placeholder="Z"
+                  className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+                />
+              </div>
+              <p className="text-[10px] text-gray-600 mt-1">
+                Select a station to fill coordinates, or type the XYZ values directly.
+              </p>
+            </div>
+          )}
           <div>
             <label className="text-[10px] text-gray-600 block">Group</label>
             <select value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)}
               className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent">
               <option value="">— No Group —</option>
-              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              {editableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           </div>
           <div>
@@ -433,13 +509,13 @@ export default function UnitDetailPanel({ unitId, onClose }) {
           {STATUS_OPTIONS.map((s) => (
             <button
               key={s}
-              onClick={() => canEditUnit && handleStatusChange(s)}
-              disabled={!canEditUnit}
+              onClick={() => canEditSelectedUnit && handleStatusChange(s)}
+              disabled={!canEditSelectedUnit}
               className={`text-xs px-2 py-1 rounded-full transition-colors ${
                 unit.status === s
                   ? 'text-white'
                   : 'bg-krt-bg border border-krt-border text-gray-400 hover:text-white hover:border-krt-accent'
-              } ${!canEditUnit ? 'opacity-60 cursor-not-allowed' : ''}`}
+              } ${!canEditSelectedUnit ? 'opacity-60 cursor-not-allowed' : ''}`}
               style={unit.status === s ? { backgroundColor: STATUS_COLORS[s] } : undefined}
             >
               {s}
@@ -467,11 +543,12 @@ export default function UnitDetailPanel({ unitId, onClose }) {
           <label className="text-xs text-gray-500 block mb-1">Aboard</label>
           <select
             value={unit.parent_unit_id || ''}
-            onChange={(e) => handleTransferPerson(unit.id, e.target.value || null)}
-            className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+            onChange={(e) => canEditSelectedUnit && handleTransferPerson(unit.id, e.target.value || null)}
+            disabled={!canEditSelectedUnit}
+            className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent disabled:opacity-60"
           >
             <option value="">— Not aboard any ship —</option>
-            {ships.map((s) => (
+            {accessibleShips.map((s) => (
               <option key={s.id} value={s.id}>{s.callsign ? `[${s.callsign}] ` : ''}{s.name}</option>
             ))}
           </select>
@@ -489,8 +566,9 @@ export default function UnitDetailPanel({ unitId, onClose }) {
               <div key={p.id} className="flex items-center justify-between bg-krt-bg rounded px-2 py-1.5">
                 <span className="text-sm text-white truncate">{p.name}</span>
                 <button
-                  onClick={() => handleTransferPerson(p.id, null)}
-                  className="text-xs text-red-400 hover:text-red-300 ml-2 whitespace-nowrap"
+                  onClick={() => canEditSelectedUnit && handleTransferPerson(p.id, null)}
+                  disabled={!canEditSelectedUnit}
+                  className="text-xs text-red-400 hover:text-red-300 ml-2 whitespace-nowrap disabled:opacity-60"
                   title="Remove from ship"
                 >
                   ✕ Disembark
@@ -629,7 +707,7 @@ export default function UnitDetailPanel({ unitId, onClose }) {
       )}
 
       {/* Actions */}
-      {canEditUnit && (
+      {canEditSelectedUnit && (
         <div className="flex gap-2 pt-2 border-t border-krt-border">
           {editing ? (
             <>
@@ -645,9 +723,11 @@ export default function UnitDetailPanel({ unitId, onClose }) {
               <button onClick={() => setEditing(true)} className="text-krt-accent text-xs px-3 py-1 hover:text-blue-400">
                 Edit
               </button>
-              <button onClick={handleDelete} className="text-red-400 text-xs px-3 py-1 hover:text-red-300 ml-auto">
-                Delete
-              </button>
+              {canDeleteUnit && (
+                <button onClick={handleDelete} className="text-red-400 text-xs px-3 py-1 hover:text-red-300 ml-auto">
+                  Delete
+                </button>
+              )}
             </>
           )}
         </div>

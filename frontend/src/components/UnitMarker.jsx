@@ -2,18 +2,23 @@ import React, { useRef, useState, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { useMissionStore } from '../stores/missionStore';
+import { usePopupStore } from '../stores/popupStore';
 import { emitUnitMove } from '../lib/socket';
 import { STATUS_COLORS, MISSION_ICONS } from '../lib/constants';
 import * as THREE from 'three';
 
 // Shared plane for raycasting during drag
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const verticalDragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 const intersection = new THREE.Vector3();
+const cameraDirection = new THREE.Vector3();
+const planeAnchor = new THREE.Vector3();
 
 /**
  * 3D marker for a single unit/ship on the map
  */
 export default function UnitMarker({ unit, group, isSelected, onDragStart, onDragEnd }) {
+  const { camera } = useThree();
   const meshRef = useRef();
   const groupRef = useRef();
   const [hovered, setHovered] = useState(false);
@@ -23,6 +28,7 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
   const dragWorldStart = useRef(null);    // world-space pointer position at drag start
   const AXIS_LOCK_THRESHOLD = 2;          // world units before axis is locked
   const { toggleSelectUnit, updateUnit, canEdit } = useMissionStore();
+  const { openUnitDetail, openPersonDetail } = usePopupStore();
   const canDrag = canEdit(unit.group_id);
 
   const color = group?.color || STATUS_COLORS[unit.status] || '#6b7280';
@@ -43,19 +49,52 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
     if (!canDrag) return; // Teamlead cannot drag
     // Set the drag plane at the unit's Y level
     dragPlane.set(new THREE.Vector3(0, 1, 0), -unit.pos_y);
-    dragStartPos.current = { x: unit.pos_x, z: unit.pos_z, pointerId: e.pointerId };
+    camera.getWorldDirection(cameraDirection);
+    cameraDirection.y = 0;
+    if (cameraDirection.lengthSq() === 0) {
+      cameraDirection.set(0, 0, 1);
+    } else {
+      cameraDirection.normalize();
+    }
+    planeAnchor.set(unit.pos_x, unit.pos_y, unit.pos_z);
+    verticalDragPlane.setFromNormalAndCoplanarPoint(cameraDirection, planeAnchor);
+
+    dragStartPos.current = {
+      x: unit.pos_x,
+      y: unit.pos_y,
+      z: unit.pos_z,
+      pointerId: e.pointerId,
+    };
     dragAxis.current = null;
     dragWorldStart.current = null;
     setDragging(true);
     e.target.setPointerCapture(e.pointerId);
     onDragStart?.();
-  }, [unit.pos_x, unit.pos_y, unit.pos_z, onDragStart, canDrag]);
+  }, [camera, unit.pos_x, unit.pos_y, unit.pos_z, onDragStart, canDrag]);
 
   const handlePointerMove = useCallback((e) => {
     if (!dragging) return;
     e.stopPropagation();
+    const shiftMode = !!e.sourceEvent?.shiftKey;
     // Raycast against the drag plane
     const ray = e.ray;
+    if (ray && shiftMode && ray.intersectPlane(verticalDragPlane, intersection)) {
+      const currentX = groupRef.current?.position.x ?? unit.pos_x;
+      const newY = intersection.y;
+      const currentZ = groupRef.current?.position.z ?? unit.pos_z;
+      if (groupRef.current) {
+        groupRef.current.position.y = newY;
+      }
+      emitUnitMove({
+        id: unit.id,
+        mission_id: unit.mission_id,
+        pos_x: currentX,
+        pos_y: newY,
+        pos_z: currentZ,
+      });
+      return;
+    }
+
     if (ray && ray.intersectPlane(dragPlane, intersection)) {
       // Record the first world-space intersection to determine axis
       if (!dragWorldStart.current) {
@@ -89,7 +128,7 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
         id: unit.id,
         mission_id: unit.mission_id,
         pos_x: newX,
-        pos_y: unit.pos_y,
+        pos_y: groupRef.current?.position.y ?? unit.pos_y,
         pos_z: newZ,
       });
     }
@@ -103,12 +142,14 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
 
     // Get final position from the group ref
     const finalX = groupRef.current?.position.x ?? unit.pos_x;
+    const finalY = groupRef.current?.position.y ?? unit.pos_y;
     const finalZ = groupRef.current?.position.z ?? unit.pos_z;
 
     // Only persist if position actually moved
     const dx = finalX - (dragStartPos.current?.x ?? unit.pos_x);
+    const dy = finalY - (dragStartPos.current?.y ?? unit.pos_y);
     const dz = finalZ - (dragStartPos.current?.z ?? unit.pos_z);
-    if (Math.abs(dx) < 0.1 && Math.abs(dz) < 0.1) {
+    if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1 && Math.abs(dz) < 0.1) {
       // Didn't move enough — treat as click
       toggleSelectUnit(unit.id);
       return;
@@ -120,7 +161,7 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ pos_x: finalX, pos_y: unit.pos_y, pos_z: finalZ }),
+        body: JSON.stringify({ pos_x: finalX, pos_y: finalY, pos_z: finalZ }),
       });
       if (res.ok) {
         const updated = await res.json();
@@ -142,8 +183,12 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
 
   const handleDoubleClick = useCallback((e) => {
     e.stopPropagation();
-    // Prevent double-click from propagating and causing issues
-  }, []);
+    if (unit.unit_type === 'person') {
+      openPersonDetail(unit.id);
+      return;
+    }
+    openUnitDetail(unit.id);
+  }, [openPersonDetail, openUnitDetail, unit.id, unit.unit_type]);
 
   return (
     <group

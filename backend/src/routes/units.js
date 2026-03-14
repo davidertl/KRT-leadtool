@@ -5,10 +5,30 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { requireMissionMember } = require('../auth/teamAuth');
+const { requireMissionMember, ensureMissionMember, canCreateUnitInScope, canEditUnit, canEditShip, canEditGroup, getUnitAccessContext } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
 const { validate } = require('../validation/middleware');
 const { schemas } = require('../validation/schemas');
+
+const TEAMLEAD_FORBIDDEN_FIELDS = new Set([
+  'group_id',
+  'unit_type',
+  'ship_type',
+  'crew_count',
+  'crew_max',
+  'pos_x',
+  'pos_y',
+  'pos_z',
+  'heading',
+  'fuel',
+  'ammo',
+  'hull',
+  'roe',
+]);
+
+function teamleadTouchedRestrictedField(body) {
+  return Array.from(TEAMLEAD_FORBIDDEN_FIELDS).some((field) => body[field] !== undefined);
+}
 
 // List units in a mission
 router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
@@ -40,6 +60,11 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
 // Get single unit
 router.get('/:id', requireAuth, async (req, res, next) => {
   try {
+    const unitAccess = await getUnitAccessContext(req.params.id);
+    if (!unitAccess) return res.status(404).json({ error: 'Unit not found' });
+    const isMember = await ensureMissionMember(req, unitAccess.mission_id);
+    if (!isMember) return res.status(403).json({ error: 'You are not a member of this mission' });
+
     const result = await query(
       `SELECT u.*, g.name AS group_name, g.class_type AS group_class_type
        FROM units u
@@ -58,6 +83,10 @@ router.post('/', requireAuth, validate(schemas.createUnit), requireMissionMember
     const { name, callsign, vhf_frequency, ship_type, unit_type, mission_id, group_id, parent_unit_id, role, discord_id, crew_count, crew_max,
             pos_x, pos_y, pos_z, heading, fuel, ammo, hull, status, roe, notes } = req.body;
     if (!name || !mission_id) return res.status(400).json({ error: 'name and mission_id are required' });
+    const canCreate = await canCreateUnitInScope(req, req.body);
+    if (!canCreate) {
+      return res.status(403).json({ error: 'Insufficient permissions to create this unit in the requested scope' });
+    }
 
     const result = await query(
       `INSERT INTO units (name, callsign, vhf_frequency, ship_type, unit_type, owner_id, mission_id, group_id, parent_unit_id, role, discord_id, crew_count, crew_max,
@@ -86,6 +115,23 @@ router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, n
     const oldResult = await query('SELECT * FROM units WHERE id = $1', [req.params.id]);
     if (oldResult.rows.length === 0) return res.status(404).json({ error: 'Unit not found' });
     const oldUnit = oldResult.rows[0];
+    const unitAccess = await getUnitAccessContext(req.params.id);
+    const isMember = await ensureMissionMember(req, oldUnit.mission_id);
+    if (!isMember) return res.status(403).json({ error: 'You are not a member of this mission' });
+
+    const canEditExistingUnit = await canEditUnit(req, unitAccess);
+    if (!canEditExistingUnit) {
+      return res.status(403).json({ error: 'Insufficient permissions to edit this unit' });
+    }
+    if (req.missionRole === 'teamlead' && teamleadTouchedRestrictedField(req.body)) {
+      return res.status(403).json({ error: 'Teamlead can only edit person details and assigned ship' });
+    }
+    if (group_id !== undefined && group_id !== null && !canEditGroup(req, group_id)) {
+      return res.status(403).json({ error: 'Cannot move this unit to an unmanaged group' });
+    }
+    if (parent_unit_id !== undefined && parent_unit_id !== null && !(await canEditShip(req, parent_unit_id))) {
+      return res.status(403).json({ error: 'Cannot assign this person to an unmanaged ship' });
+    }
 
     // Build dynamic SET clause — only update fields that were explicitly sent
     const fields = [];
@@ -127,6 +173,17 @@ router.put('/:id', requireAuth, validate(schemas.updateUnit), async (req, res, n
 // Delete unit
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
+    const unitAccess = await getUnitAccessContext(req.params.id);
+    if (!unitAccess) return res.status(404).json({ error: 'Unit not found' });
+    const isMember = await ensureMissionMember(req, unitAccess.mission_id);
+    if (!isMember) return res.status(403).json({ error: 'You are not a member of this mission' });
+    if (req.missionRole === 'teamlead') {
+      return res.status(403).json({ error: 'Teamlead cannot delete units or persons' });
+    }
+    if (!(await canEditUnit(req, unitAccess))) {
+      return res.status(403).json({ error: 'Insufficient permissions to delete this unit' });
+    }
+
     const result = await query(
       'DELETE FROM units WHERE id = $1 RETURNING id, mission_id',
       [req.params.id]
@@ -148,6 +205,12 @@ router.patch('/batch-position', requireAuth, validate(schemas.batchPosition), as
 
     const results = [];
     for (const u of updates) {
+      const unitAccess = await getUnitAccessContext(u.id);
+      if (!unitAccess) continue;
+      const isMember = await ensureMissionMember(req, unitAccess.mission_id);
+      if (!isMember || !(await canEditUnit(req, unitAccess))) {
+        return res.status(403).json({ error: 'Insufficient permissions to move one or more units' });
+      }
       const result = await query(
         `UPDATE units SET pos_x = $1, pos_y = $2, pos_z = $3, heading = COALESCE($4, heading)
          WHERE id = $5 RETURNING *`,

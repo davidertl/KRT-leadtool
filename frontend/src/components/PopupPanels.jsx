@@ -394,22 +394,36 @@ function TaskListItem({ task, completed, onEdit }) {
 
 /* ─── BatchStatusUpdate ────────────── */
 function BatchStatusUpdate({ unitIds }) {
+  const { units, canUpdateStatusForUnit } = useMissionStore();
+  const editableUnitIds = unitIds.filter((id) => {
+    const unit = units.find((candidate) => candidate.id === id);
+    return unit && canUpdateStatusForUnit(unit);
+  });
+
   const handleStatusChange = async (newStatus) => {
     try {
-      for (const id of unitIds) {
+      for (const id of editableUnitIds) {
         const res = await fetch(`/api/units/${id}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify({ status: newStatus }),
         });
         if (res.ok) useMissionStore.getState().updateUnit(await res.json());
       }
-      toast.success(`${unitIds.length} unit(s) → ${newStatus}`);
+      toast.success(`${editableUnitIds.length} unit(s) → ${newStatus}`);
     } catch { toast.error('Failed to update some units'); }
   };
 
+  if (editableUnitIds.length === 0) {
+    return (
+      <div className="p-2 bg-krt-bg/50 rounded-lg">
+        <p className="text-xs text-gray-400">No selected units are editable with your current role.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-2 bg-krt-bg/50 rounded-lg">
-      <p className="text-xs text-gray-400 mb-2">Set status for {unitIds.length} unit(s):</p>
+      <p className="text-xs text-gray-400 mb-2">Set status for {editableUnitIds.length} unit(s):</p>
       <div className="flex flex-wrap gap-1">
         {STATUS_OPTIONS.map((status) => (
           <button key={status} onClick={() => handleStatusChange(status)}
@@ -428,8 +442,37 @@ const UNIT_TYPES = [
   { value: 'ground_vehicle', label: '🚗 Ground Vehicle' },
 ];
 
+function normalizeVehicleSearchValue(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function getVehicleOptionLabel(vehicle) {
+  if (vehicle.display_name && vehicle.display_name.toLowerCase() !== vehicle.ship_type?.toLowerCase()) {
+    return `${vehicle.display_name} (${vehicle.ship_type})`;
+  }
+  return vehicle.display_name || vehicle.ship_type || 'Unknown vehicle';
+}
+
+function getVehicleCrewMax(vehicle) {
+  return vehicle?.crew_max != null ? String(vehicle.crew_max) : '';
+}
+
+function getExactVehicleMatch(vehicleList, rawValue) {
+  const normalizedValue = normalizeVehicleSearchValue(rawValue);
+  if (!normalizedValue) return null;
+
+  return vehicleList.find((vehicle) =>
+    [vehicle.ship_type, vehicle.display_name]
+      .filter(Boolean)
+      .some((value) => normalizeVehicleSearchValue(value) === normalizedValue)
+  ) || null;
+}
+
 function CreateUnitForm({ missionId, groups, onClose }) {
-  const { navData, units } = useMissionStore();
+  const { navData, units, myMissionRole, canEdit, canAssignShip } = useMissionStore();
   const [name, setName] = useState('');
   const [callsign, setCallsign] = useState('');
   const [shipType, setShipType] = useState('');
@@ -440,6 +483,8 @@ function CreateUnitForm({ missionId, groups, onClose }) {
   const [role, setRole] = useState('');
   const [crewCount, setCrewCount] = useState(1);
   const [crewMax, setCrewMax] = useState('');
+  const [autoCrewSource, setAutoCrewSource] = useState('');
+  const [crewMaxManuallyEdited, setCrewMaxManuallyEdited] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -473,8 +518,9 @@ function CreateUnitForm({ missionId, groups, onClose }) {
   // Filter vehicle list by search text
   const filteredVehicles = vehicleSearch
     ? vehicleList.filter((v) =>
-        v.ship_type.toLowerCase().includes(vehicleSearch.toLowerCase()) ||
-        (v.manufacturer && v.manufacturer.toLowerCase().includes(vehicleSearch.toLowerCase()))
+        [v.ship_type, v.display_name, v.manufacturer]
+          .filter(Boolean)
+          .some((value) => normalizeVehicleSearchValue(value).includes(normalizeVehicleSearchValue(vehicleSearch)))
       )
     : vehicleList;
 
@@ -486,15 +532,56 @@ function CreateUnitForm({ missionId, groups, onClose }) {
     return acc;
   }, {});
 
-  const availableShips = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === missionId);
+  const selectableGroups = myMissionRole === 'gesamtlead' ? groups : groups.filter((group) => canEdit(group.id));
+  const availableShips = units
+    .filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === missionId)
+    .filter((ship) => myMissionRole === 'gesamtlead' || canAssignShip(ship.id));
 
   const spawnLocations = (navData?.points || [])
     .filter((p) => SPAWNABLE_NAV_TYPES.includes(p.nav_type) && p.active !== false)
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  useEffect(() => {
+    if (myMissionRole === 'gruppenlead' && !groupId && selectableGroups.length > 0) {
+      setGroupId(selectableGroups[0].id);
+    }
+  }, [groupId, myMissionRole, selectableGroups]);
+
+  const applyVehicleSelection = (vehicle) => {
+    setShipType(vehicle.ship_type);
+    setVehicleSearch('');
+    setShowVehicleDropdown(false);
+    setCrewMax(getVehicleCrewMax(vehicle));
+    setAutoCrewSource(vehicle.ship_type || '');
+    setCrewMaxManuallyEdited(false);
+  };
+
+  const handleVehicleSearchChange = (value) => {
+    setVehicleSearch(value);
+    setShipType('');
+    setShowVehicleDropdown(true);
+
+    const exactMatch = getExactVehicleMatch(vehicleList, value);
+    if (exactMatch) {
+      setCrewMax(getVehicleCrewMax(exactMatch));
+      setAutoCrewSource(exactMatch.ship_type || '');
+      setCrewMaxManuallyEdited(false);
+      return;
+    }
+
+    if (!crewMaxManuallyEdited && autoCrewSource) {
+      setCrewMax('');
+      setAutoCrewSource('');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (myMissionRole === 'gruppenlead' && !groupId && !parentUnitId) {
+      setError('Select one of your assigned groups');
+      return;
+    }
     let spawnX = 0, spawnY = 0, spawnZ = 0;
     if (unitType === 'person' && parentUnitId) {
       const p = units.find((u) => u.id === parentUnitId);
@@ -538,7 +625,14 @@ function CreateUnitForm({ missionId, groups, onClose }) {
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent" />
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <select value={unitType} onChange={(e) => { setUnitType(e.target.value); setShipType(''); setVehicleSearch(''); }}
+        <select value={unitType} onChange={(e) => {
+          setUnitType(e.target.value);
+          setShipType('');
+          setVehicleSearch('');
+          setCrewMax('');
+          setAutoCrewSource('');
+          setCrewMaxManuallyEdited(false);
+        }}
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
           {UNIT_TYPES.map((ut) => <option key={ut.value} value={ut.value}>{ut.label}</option>)}
         </select>
@@ -547,13 +641,26 @@ function CreateUnitForm({ missionId, groups, onClose }) {
             <input
               type="text"
               value={shipType || vehicleSearch}
-              onChange={(e) => { setVehicleSearch(e.target.value); setShipType(''); setShowVehicleDropdown(true); }}
+              onChange={(e) => handleVehicleSearchChange(e.target.value)}
               onFocus={() => setShowVehicleDropdown(true)}
+              onBlur={() => {
+                const exactMatch = getExactVehicleMatch(vehicleList, shipType || vehicleSearch);
+                if (exactMatch) {
+                  applyVehicleSelection(exactMatch);
+                }
+              }}
               placeholder={unitType === 'ground_vehicle' ? 'Search vehicle…' : 'Search ship…'}
               className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
             />
             {shipType && (
-              <button type="button" onClick={() => { setShipType(''); setVehicleSearch(''); }}
+              <button type="button" onClick={() => {
+                setShipType('');
+                setVehicleSearch('');
+                if (!crewMaxManuallyEdited) {
+                  setCrewMax('');
+                  setAutoCrewSource('');
+                }
+              }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs">✕</button>
             )}
             {showVehicleDropdown && filteredVehicles.length > 0 && (
@@ -563,9 +670,13 @@ function CreateUnitForm({ missionId, groups, onClose }) {
                     <div className="px-3 py-1 text-[10px] font-bold text-gray-500 bg-krt-bg/60 sticky top-0">{mfr}</div>
                     {vehicles.map((v) => (
                       <button key={v.ship_type} type="button"
-                        onClick={() => { setShipType(v.ship_type); setVehicleSearch(''); setShowVehicleDropdown(false); }}
+                        onClick={() => applyVehicleSelection(v)}
                         className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-krt-accent/20 transition-colors">
-                        {v.ship_type}
+                        <div>{getVehicleOptionLabel(v)}</div>
+                        <div className="text-[10px] text-gray-500">
+                          {v.manufacturer || 'Unknown manufacturer'}
+                          {v.crew_max != null ? ` • ${v.crew_max} seats` : ''}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -592,7 +703,15 @@ function CreateUnitForm({ missionId, groups, onClose }) {
         {spawnLocations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name} ({loc.nav_type.replace('_', ' ')})</option>)}
       </select>
       {unitType === 'person' && (
-        <select value={parentUnitId} onChange={(e) => { setParentUnitId(e.target.value); if (e.target.value) setStationId(''); }}
+        <select value={parentUnitId} onChange={(e) => {
+          const nextParentId = e.target.value;
+          setParentUnitId(nextParentId);
+          if (nextParentId) {
+            setStationId('');
+            const ship = availableShips.find((candidate) => candidate.id === nextParentId);
+            if (ship?.group_id) setGroupId(ship.group_id);
+          }
+        }}
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
           <option value="">Aboard ship (optional)</option>
           {availableShips.map((s) => <option key={s.id} value={s.id}>{s.callsign ? `[${s.callsign}] ` : ''}{s.name}</option>)}
@@ -601,13 +720,13 @@ function CreateUnitForm({ missionId, groups, onClose }) {
       <div className="grid grid-cols-2 gap-2">
         <select value={groupId} onChange={(e) => setGroupId(e.target.value)}
           className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
-          <option value="">No group</option>
-          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          {myMissionRole === 'gesamtlead' && <option value="">No group</option>}
+          {selectableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
         <div className="flex gap-1">
           <input type="number" value={crewCount} onChange={(e) => setCrewCount(Math.max(0, parseInt(e.target.value) || 0))} placeholder="Crew" min={0}
             className="w-full bg-krt-panel border border-krt-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent" />
-          <input type="number" value={crewMax} onChange={(e) => setCrewMax(e.target.value)} placeholder="Max" min={0}
+          <input type="number" value={crewMax} onChange={(e) => { setCrewMax(e.target.value); setCrewMaxManuallyEdited(true); }} placeholder="Max" min={0}
             className="w-full bg-krt-panel border border-krt-border rounded px-2 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent" />
         </div>
       </div>
@@ -914,7 +1033,7 @@ function PersonListItem({ person, group, isSelected }) {
 
 /* ─── CreatePersonForm ─────────────── */
 function CreatePersonForm({ missionId, groups, onClose }) {
-  const { units, navData } = useMissionStore();
+  const { units, navData, myMissionRole, canEdit, canAssignShip } = useMissionStore();
   const [name, setName] = useState('');
   const [callsign, setCallsign] = useState('');
   const [role, setRole] = useState('');
@@ -926,14 +1045,27 @@ function CreatePersonForm({ missionId, groups, onClose }) {
 
   const MAP_SCALE = 1e6;
   const SPAWNABLE_NAV_TYPES = ['station', 'rest_stop', 'outpost'];
-  const availableShips = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === missionId);
+  const selectableGroups = myMissionRole === 'gesamtlead' ? groups : groups.filter((group) => canEdit(group.id));
+  const availableShips = units
+    .filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === missionId)
+    .filter((ship) => myMissionRole === 'gesamtlead' || canAssignShip(ship.id));
   const spawnLocations = (navData?.points || [])
     .filter((p) => SPAWNABLE_NAV_TYPES.includes(p.nav_type) && p.active !== false)
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  useEffect(() => {
+    if (myMissionRole === 'gruppenlead' && !groupId && selectableGroups.length > 0) {
+      setGroupId(selectableGroups[0].id);
+    }
+  }, [groupId, myMissionRole, selectableGroups]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (myMissionRole === 'gruppenlead' && !groupId && !parentUnitId) {
+      setError('Select one of your assigned groups or an assigned ship');
+      return;
+    }
     let spawnX = 0, spawnY = 0, spawnZ = 0;
     if (parentUnitId) {
       const p = units.find((u) => u.id === parentUnitId);
@@ -977,7 +1109,15 @@ function CreatePersonForm({ missionId, groups, onClose }) {
       </div>
       <input type="text" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Role (e.g. Pilot, Engineer)"
         className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent" />
-      <select value={parentUnitId} onChange={(e) => { setParentUnitId(e.target.value); if (e.target.value) setStationId(''); }}
+      <select value={parentUnitId} onChange={(e) => {
+        const nextParentId = e.target.value;
+        setParentUnitId(nextParentId);
+        if (nextParentId) {
+          setStationId('');
+          const ship = availableShips.find((candidate) => candidate.id === nextParentId);
+          if (ship?.group_id) setGroupId(ship.group_id);
+        }
+      }}
         className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
         <option value="">Board a ship (optional)</option>
         {availableShips.map((s) => <option key={s.id} value={s.id}>{s.callsign ? `[${s.callsign}] ` : ''}{s.name}</option>)}
@@ -991,8 +1131,8 @@ function CreatePersonForm({ missionId, groups, onClose }) {
       )}
       <select value={groupId} onChange={(e) => setGroupId(e.target.value)}
         className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent">
-        <option value="">No group</option>
-        {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        {myMissionRole === 'gesamtlead' && <option value="">No group</option>}
+        {selectableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
       </select>
       {error && <p className="text-xs text-red-400">{error}</p>}
       <div className="flex gap-2">

@@ -9,13 +9,16 @@ import toast from 'react-hot-toast';
  * No fuel/ammo/hull/crew fields.
  */
 export default function PersonDetailPanel({ unitId, onClose }) {
-  const { units, groups, tasks, focusUnit, updateUnit: storeUpdateUnit, removeUnit: storeRemoveUnit } = useMissionStore();
+  const { units, groups, tasks, focusUnit, updateUnit: storeUpdateUnit, removeUnit: storeRemoveUnit, canEditUnit: canEditUnitInStore, canEdit, canAssignShip, myMissionRole } = useMissionStore();
   const person = units.find((u) => u.id === unitId);
   const group = person ? groups.find((g) => g.id === person.group_id) : null;
   const parentShip = person?.parent_unit_id ? units.find((u) => u.id === person.parent_unit_id) : null;
   const ships = units.filter((u) => (u.unit_type === 'ship' || u.unit_type === 'ground_vehicle') && u.mission_id === person?.mission_id);
+  const editableGroups = myMissionRole === 'gesamtlead' ? groups : groups.filter((candidate) => canEdit(candidate.id));
+  const accessibleShips = ships.filter((ship) => canAssignShip(ship.id) || ship.id === person?.parent_unit_id);
 
-  const canEditPerson = useMissionStore.getState().canEdit(person?.group_id);
+  const canEditPerson = canEditUnitInStore(person);
+  const canDeletePerson = canEditPerson && myMissionRole !== 'teamlead';
 
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -68,9 +71,11 @@ export default function PersonDetailPanel({ unitId, onClose }) {
         notes: editNotes || null,
         callsign: editCallsign || null,
         role: editRole || null,
-        roe: editRoe || 'self_defence',
-        group_id: editGroupId || null,
       };
+      if (myMissionRole !== 'teamlead') {
+        payload.roe = editRoe || 'self_defence';
+        payload.group_id = editGroupId || null;
+      }
       const res = await fetch(`/api/units/${person.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -172,26 +177,30 @@ export default function PersonDetailPanel({ unitId, onClose }) {
                 className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" placeholder="Role" />
             </div>
           </div>
-          <div>
-            <label className="text-[10px] text-gray-600 block">Group</label>
-            <select value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)}
-              className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent">
-              <option value="">— No Group —</option>
-              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] text-gray-600 block">ROE</label>
-            <div className="flex flex-wrap gap-1">
-              {Object.entries(ROE_LABELS).map(([key, { label, color }]) => (
-                <button key={key} type="button" onClick={() => setEditRoe(key)}
-                  className={`text-xs px-2 py-1 rounded-full transition-colors border ${editRoe === key ? 'border-white' : 'border-krt-border'}`}
-                  style={{ backgroundColor: editRoe === key ? color + '30' : 'transparent', color }}>
-                  {label}
-                </button>
-              ))}
+          {myMissionRole !== 'teamlead' && (
+            <div>
+              <label className="text-[10px] text-gray-600 block">Group</label>
+              <select value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)}
+                className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent">
+                <option value="">— No Group —</option>
+                {editableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
             </div>
-          </div>
+          )}
+          {myMissionRole !== 'teamlead' && (
+            <div>
+              <label className="text-[10px] text-gray-600 block">ROE</label>
+              <div className="flex flex-wrap gap-1">
+                {Object.entries(ROE_LABELS).map(([key, { label, color }]) => (
+                  <button key={key} type="button" onClick={() => setEditRoe(key)}
+                    className={`text-xs px-2 py-1 rounded-full transition-colors border ${editRoe === key ? 'border-white' : 'border-krt-border'}`}
+                    style={{ backgroundColor: editRoe === key ? color + '30' : 'transparent', color }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
@@ -268,11 +277,12 @@ export default function PersonDetailPanel({ unitId, onClose }) {
         <label className="text-xs text-gray-500 block mb-1">Aboard</label>
         <select
           value={person.parent_unit_id || ''}
-          onChange={(e) => handleTransfer(e.target.value || null)}
-          className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent"
+          onChange={(e) => canEditPerson && handleTransfer(e.target.value || null)}
+          disabled={!canEditPerson}
+          className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-krt-accent disabled:opacity-60"
         >
           <option value="">— Not aboard any ship —</option>
-          {ships.map((s) => (
+          {accessibleShips.map((s) => (
             <option key={s.id} value={s.id}>{s.callsign ? `[${s.callsign}] ` : ''}{s.name}</option>
           ))}
         </select>
@@ -357,7 +367,9 @@ export default function PersonDetailPanel({ unitId, onClose }) {
           ) : (
             <>
               <button onClick={() => setEditing(true)} className="text-krt-accent text-xs px-3 py-1 hover:text-blue-400">Edit</button>
-              <button onClick={handleDelete} className="text-red-400 text-xs px-3 py-1 hover:text-red-300 ml-auto">Delete</button>
+              {canDeletePerson && (
+                <button onClick={handleDelete} className="text-red-400 text-xs px-3 py-1 hover:text-red-300 ml-auto">Delete</button>
+              )}
             </>
           )}
         </div>

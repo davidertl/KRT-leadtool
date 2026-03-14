@@ -28,7 +28,7 @@ function timeAgo(dateStr) {
  * Quick messages / check-in panel — one-click military comms
  */
 export default function QuickMessages({ missionId }) {
-  const { messages, units, groups } = useMissionStore();
+  const { messages, units, groups, canUpdateStatusForUnit } = useMissionStore();
   const user = useAuthStore((s) => s.user);
   const [recipientType, setRecipientType] = useState('system');
   const [recipientId, setRecipientId] = useState('');
@@ -51,11 +51,24 @@ export default function QuickMessages({ missionId }) {
     if (userPersonId && !selectedUnit) setSelectedUnit(userPersonId);
   }, [userPersonId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (selectedUnit && recipientType === 'system' && !selectableUnits.some((unit) => unit.id === selectedUnit)) {
+      setSelectedUnit('');
+    }
+  }, [recipientType, selectableUnits, selectedUnit]);
+
+  const selectedUnitRecord = units.find((unit) => unit.id === selectedUnit);
+
+  const selectableUnits = useMemo(() => {
+    if (recipientType !== 'system') return units;
+    return units.filter((unit) => canUpdateStatusForUnit(unit));
+  }, [recipientType, units, canUpdateStatusForUnit]);
+
   /* Units grouped under their group for the selector */
   const groupedUnits = useMemo(() => {
     const grouped = {};
     const ungrouped = [];
-    for (const u of units) {
+    for (const u of selectableUnits) {
       const g = groups.find((gr) => gr.id === u.group_id);
       if (g) {
         if (!grouped[g.id]) grouped[g.id] = { name: g.name, units: [] };
@@ -70,7 +83,7 @@ export default function QuickMessages({ missionId }) {
     );
     ungrouped.sort((a, b) => (a.callsign || a.name).localeCompare(b.callsign || b.name));
     return { grouped, ungrouped };
-  }, [units, groups]);
+  }, [selectableUnits, groups]);
 
   /** Status message types that trigger unit-status updates when sent via System */
   const STATUS_MSG_TYPES = new Set([
@@ -81,6 +94,9 @@ export default function QuickMessages({ missionId }) {
   const sendMessage = async (msgType, message) => {
     setSending(true);
     try {
+      if (STATUS_MSG_TYPES.has(msgType) && (!selectedUnitRecord || !canUpdateStatusForUnit(selectedUnitRecord))) {
+        throw new Error('Select a unit you are allowed to update');
+      }
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,7 +148,9 @@ export default function QuickMessages({ missionId }) {
     <div className="space-y-3">
       {/* Reporting unit — grouped by group */}
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Reporting Unit (optional)</label>
+        <label className="text-xs text-gray-500 block mb-1">
+          {recipientType === 'system' ? 'Reporting Unit (required for status updates)' : 'Reporting Unit (optional)'}
+        </label>
         <select
           value={selectedUnit}
           onChange={(e) => setSelectedUnit(e.target.value)}
@@ -213,7 +231,7 @@ export default function QuickMessages({ missionId }) {
           <button
             key={btn.type}
             onClick={() => sendMessage(btn.type)}
-            disabled={sending}
+            disabled={sending || (recipientType === 'system' && STATUS_MSG_TYPES.has(btn.type) && (!selectedUnitRecord || !canUpdateStatusForUnit(selectedUnitRecord)))}
             className="text-xs px-2 py-2 rounded border border-krt-border hover:border-opacity-100 transition-colors text-left disabled:opacity-50"
             style={{ borderColor: btn.color + '40', color: btn.color }}
             title={btn.desc}

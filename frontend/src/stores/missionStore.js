@@ -25,6 +25,7 @@ export const useMissionStore = create((set, get) => ({
   joinRequests: [],
   myMissionRole: null,          // 'gesamtlead' | 'gruppenlead' | 'teamlead'
   myAssignedGroups: [],         // UUIDs of groups this user can manage
+  myAssignedUnits: [],          // UUIDs of ships this teamlead can manage
   selectedUnitIds: [],
   lastSyncTime: null,
   focusedUnitId: null,
@@ -237,6 +238,7 @@ export const useMissionStore = create((set, get) => ({
   setJoinRequests: (joinRequests) => set({ joinRequests }),
   setMyMissionRole: (role) => set({ myMissionRole: role }),
   setMyAssignedGroups: (groups) => set({ myAssignedGroups: groups }),
+  setMyAssignedUnits: (units) => set({ myAssignedUnits: units }),
 
   addJoinRequest: (jr) => set((s) => ({
     joinRequests: [...s.joinRequests.filter((r) => r.id !== jr.id), jr],
@@ -267,6 +269,50 @@ export const useMissionStore = create((set, get) => ({
     }
     return false;
   },
+
+  canEditUnit: (unit) => {
+    if (!unit) return false;
+    const { myMissionRole, myAssignedGroups, myAssignedUnits, units } = get();
+    if (myMissionRole === 'gesamtlead') return true;
+
+    const parentUnit = unit.parent_unit_id
+      ? units.find((candidate) => candidate.id === unit.parent_unit_id)
+      : null;
+    const effectiveGroupId = unit.group_id || parentUnit?.group_id || null;
+
+    if (myMissionRole === 'gruppenlead') {
+      return !!effectiveGroupId && myAssignedGroups.includes(effectiveGroupId);
+    }
+
+    if (myMissionRole === 'teamlead') {
+      return unit.unit_type === 'person'
+        && !!unit.parent_unit_id
+        && myAssignedUnits.includes(unit.parent_unit_id);
+    }
+
+    return false;
+  },
+
+  canAssignShip: (shipId) => {
+    if (!shipId) return false;
+    const { myMissionRole, myAssignedGroups, myAssignedUnits, units } = get();
+    if (myMissionRole === 'gesamtlead') return true;
+
+    const ship = units.find((candidate) => candidate.id === shipId);
+    if (!ship) return false;
+
+    if (myMissionRole === 'gruppenlead') {
+      return !!ship.group_id && myAssignedGroups.includes(ship.group_id);
+    }
+
+    if (myMissionRole === 'teamlead') {
+      return myAssignedUnits.includes(shipId);
+    }
+
+    return false;
+  },
+
+  canUpdateStatusForUnit: (unit) => get().canEditUnit(unit),
 
   // ---- Navigation Data ----
   setNavData: (navData) => set({ navData }),

@@ -31,7 +31,7 @@ export default function MapPage() {
     setMissionId, setUnits, setGroups, setWaypoints, setContacts, setTasks,
     setOperations, setEvents, setMessages, setBookmarks, setNavData,
     setActiveSystemId, setLastSyncTime, loadFromCache,
-    setMembers, setJoinRequests, setMyMissionRole, setMyAssignedGroups,
+    setMembers, setJoinRequests, setMyMissionRole, setMyAssignedGroups, setMyAssignedUnits,
     addJoinRequest, removeJoinRequest,
   } = useMissionStore();
 
@@ -76,6 +76,7 @@ export default function MapPage() {
         if (missionInfo && missionInfo.mission_role) {
           setMyMissionRole(missionInfo.mission_role);
           setMyAssignedGroups(missionInfo.assigned_group_ids || []);
+          setMyAssignedUnits(missionInfo.assigned_unit_ids || []);
         }
 
         // Load first system navigation data
