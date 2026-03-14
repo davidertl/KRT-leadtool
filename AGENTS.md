@@ -10,7 +10,7 @@ Two independent packages (not a monorepo workspace): `backend/` (Express + Socke
 |---|---|---|
 | PostgreSQL 16 + PostGIS 3.4 | `sudo docker start krt-postgres` (or re-create; see below) | 5432 |
 | Valkey 8 (Redis-compatible) | `sudo docker start krt-valkey` (or re-create; see below) | 6379 |
-| Backend | `cd backend && NODE_ENV=development POSTGRES_HOST=localhost POSTGRES_USER=$POSTGRES_USER POSTGRES_PASSWORD=$POSTGRES_PASSWORD POSTGRES_DB=$POSTGRES_DB VALKEY_HOST=localhost VALKEY_PASSWORD= npx nodemon src/index.js` | 3000 |
+| Backend | `cd backend && env NODE_ENV=development POSTGRES_HOST=localhost POSTGRES_USER=$POSTGRES_USER POSTGRES_PASSWORD=$POSTGRES_PASSWORD POSTGRES_DB=$POSTGRES_DB VALKEY_HOST=localhost VALKEY_PASSWORD="" APP_URL=http://localhost:5173 DISCORD_CALLBACK_URL=http://localhost:5173/api/auth/discord/callback node src/index.js` | 3000 |
 | Frontend | `cd frontend && npx vite --host 0.0.0.0` | 5173 |
 
 ### Critical: injected env vars override dotenv
@@ -48,5 +48,5 @@ Frontend: `cd frontend && npx vite build` — produces `dist/`.
 ### Authentication
 Discord OAuth2 is the only auth method. Without valid `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` credentials registered at https://discord.com/developers/applications, login will fail. The callback URL must match what's registered in the Discord app.
 
-### Public IP for OAuth callback
-The domain in the injected secrets likely doesn't point to the Cloud Agent VM. Use the VM's public IP (find via `curl -s ifconfig.me`) in `APP_URL` and `DISCORD_CALLBACK_URL` if you need OAuth to work, and update the Discord app's redirect URI accordingly.
+### OAuth callback: use localhost, NOT public IP
+The VM's browser (Desktop pane) cannot reach the VM's own public IP (`ERR_CONNECTION_RESET`). Use `http://localhost:5173` for both `APP_URL` and `DISCORD_CALLBACK_URL`. The Discord app must have `http://localhost:5173/api/auth/discord/callback` registered as a redirect URI. Override these via `env` when starting the backend (see table above), because the injected secrets contain production values.
