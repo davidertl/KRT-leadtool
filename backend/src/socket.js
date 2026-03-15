@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const { verifyToken } = require('./auth/jwt');
 const { valkey } = require('./db/valkey');
 const { query } = require('./db/postgres');
+const { ensureMissionMember, getUnitAccessContext, canEditUnit } = require('./auth/teamAuth');
 
 let io = null;
 
@@ -42,6 +43,15 @@ function initSocketIO(httpServer) {
 
     // Join mission room
     socket.on('mission:join', async (missionId) => {
+      const reqLike = { user: socket.user };
+      const isMember = await ensureMissionMember(reqLike, missionId);
+      if (!isMember) {
+        socket.emit('mission:error', { missionId, error: 'You are not a member of this mission' });
+        return;
+      }
+
+      socket.missionScopes = socket.missionScopes || new Map();
+      socket.missionScopes.set(missionId, reqLike);
       socket.join(`mission:${missionId}`);
       console.log(`[KRT] ${socket.user.username} joined mission:${missionId}`);
 
@@ -69,14 +79,22 @@ function initSocketIO(httpServer) {
     // Leave mission room
     socket.on('mission:leave', (missionId) => {
       socket.leave(`mission:${missionId}`);
+      socket.missionScopes?.delete(missionId);
       valkey.hdel(`online:${missionId}`, socket.user.id).catch(() => {});
       broadcastOnlineUsers(missionId);
     });
 
     // Real-time unit position update (for smooth drag)
-    socket.on('unit:move', (data) => {
+    socket.on('unit:move', async (data) => {
       // Broadcast to mission without persisting (persist on drop via REST)
       if (data.mission_id) {
+        const scopedReq = socket.missionScopes?.get(data.mission_id) || { user: socket.user };
+        const isMember = await ensureMissionMember(scopedReq, data.mission_id);
+        if (!isMember) return;
+        if (data.id) {
+          const unitContext = await getUnitAccessContext(data.id);
+          if (!unitContext || !(await canEditUnit(scopedReq, unitContext))) return;
+        }
         socket.to(`mission:${data.mission_id}`).emit('unit:moved', {
           id: data.id,
           pos_x: data.pos_x,
@@ -88,8 +106,11 @@ function initSocketIO(httpServer) {
     });
 
     // Cursor/selection sharing for collaborative awareness
-    socket.on('cursor:update', (data) => {
+    socket.on('cursor:update', async (data) => {
       if (data.mission_id) {
+        const scopedReq = socket.missionScopes?.get(data.mission_id) || { user: socket.user };
+        const isMember = await ensureMissionMember(scopedReq, data.mission_id);
+        if (!isMember) return;
         socket.to(`mission:${data.mission_id}`).emit('cursor:updated', {
           user_id: socket.user.id,
           username: socket.user.username,

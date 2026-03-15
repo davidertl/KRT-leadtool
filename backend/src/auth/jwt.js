@@ -4,21 +4,41 @@
 
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret';
+function getJwtSecret() {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is required');
+  }
+
+  return process.env.JWT_SECRET;
+}
+
+function getTokenFromRequest(req) {
+  return req.cookies?.jwt || req.headers.authorization?.replace('Bearer ', '');
+}
 
 /**
  * Generate a JWT for a user
  */
-function generateToken(user) {
+function generateToken(user, options = {}) {
+  const {
+    tokenType = 'web',
+    scopes = ['web'],
+    sessionId = null,
+    expiresIn = process.env.JWT_EXPIRY || '7d',
+  } = options;
+
   return jwt.sign(
     {
       id: user.id,
       discord_id: user.discord_id,
       username: user.username,
       role: user.role,
+      token_type: tokenType,
+      scopes,
+      session_id: sessionId,
     },
-    JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRY || '7d' }
+    getJwtSecret(),
+    { expiresIn }
   );
 }
 
@@ -26,14 +46,14 @@ function generateToken(user) {
  * Verify and decode a JWT
  */
 function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET);
+  return jwt.verify(token, getJwtSecret());
 }
 
 /**
  * Express middleware - require valid JWT in cookie or Authorization header
  */
 function requireAuth(req, res, next) {
-  const token = req.cookies?.jwt || req.headers.authorization?.replace('Bearer ', '');
+  const token = getTokenFromRequest(req);
 
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
@@ -42,6 +62,7 @@ function requireAuth(req, res, next) {
   try {
     const decoded = verifyToken(token);
     req.user = decoded;
+    req.authToken = token;
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' });
@@ -63,4 +84,4 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { generateToken, verifyToken, requireAuth, requireRole };
+module.exports = { generateToken, verifyToken, requireAuth, requireRole, getJwtSecret, getTokenFromRequest };

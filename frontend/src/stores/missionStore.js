@@ -21,6 +21,7 @@ export const useMissionStore = create((set, get) => ({
   bookmarks: [],
   navData: { systems: [], bodies: [], points: [], edges: [] },
   onlineUsers: [],
+  missionInfo: null,
   members: [],
   joinRequests: [],
   myMissionRole: null,          // 'gesamtlead' | 'gruppenlead' | 'teamlead'
@@ -35,6 +36,7 @@ export const useMissionStore = create((set, get) => ({
   activeSystemId: null,
 
   setMissionId: (missionId) => set({ missionId }),
+  setMissionInfo: (missionInfo) => set({ missionInfo }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setStatusFilter: (s) => set({ statusFilter: s }),
   toggleStatusFilter: (s) => set((state) => {

@@ -5,9 +5,11 @@
 const router = require('express').Router();
 const crypto = require('crypto');
 const { query } = require('../db/postgres');
-const { requireAuth, requireRole } = require('../auth/jwt');
+const { requireAuth } = require('../auth/jwt');
+const { requireMissionMember, requireGesamtlead } = require('../auth/teamAuth');
 const { validate } = require('../validation/middleware');
 const { schemas } = require('../validation/schemas');
+const { normalizeMissionSettings } = require('../services/missionSettings');
 
 /** Generate a short random join code */
 function generateJoinCode() {
@@ -25,7 +27,10 @@ router.get('/', requireAuth, async (req, res, next) => {
        ORDER BY m.created_at DESC`,
       [req.user.id]
     );
-    res.json(result.rows);
+    res.json(result.rows.map((mission) => ({
+      ...mission,
+      settings: normalizeMissionSettings(mission.settings),
+    })));
   } catch (err) { next(err); }
 });
 
@@ -57,7 +62,10 @@ router.get('/:id', requireAuth, async (req, res, next) => {
       [req.params.id, req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Mission not found' });
-    res.json(result.rows[0]);
+    res.json({
+      ...result.rows[0],
+      settings: normalizeMissionSettings(result.rows[0].settings),
+    });
   } catch (err) { next(err); }
 });
 
@@ -72,7 +80,7 @@ router.post('/', requireAuth, validate(schemas.createMission), async (req, res, 
       `INSERT INTO missions (name, description, owner_id, join_code, is_public, settings)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [name, description || null, req.user.id, joinCode, is_public || false, settings || {}]
+      [name, description || null, req.user.id, joinCode, is_public || false, normalizeMissionSettings(settings || {})]
     );
 
     // Add creator as admin + gesamtlead
@@ -81,7 +89,10 @@ router.post('/', requireAuth, validate(schemas.createMission), async (req, res, 
       [result.rows[0].id, req.user.id]
     );
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json({
+      ...result.rows[0],
+      settings: normalizeMissionSettings(result.rows[0].settings),
+    });
   } catch (err) { next(err); }
 });
 
@@ -97,10 +108,13 @@ router.put('/:id', requireAuth, validate(schemas.updateMission), async (req, res
          is_public = COALESCE($4, is_public)
        WHERE id = $5 AND owner_id = $6
        RETURNING *`,
-      [name, description, settings, is_public, req.params.id, req.user.id]
+      [name, description, settings ? normalizeMissionSettings(settings) : undefined, is_public, req.params.id, req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Mission not found or unauthorized' });
-    res.json(result.rows[0]);
+    res.json({
+      ...result.rows[0],
+      settings: normalizeMissionSettings(result.rows[0].settings),
+    });
   } catch (err) { next(err); }
 });
 
@@ -117,7 +131,7 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
 });
 
 // Add member to mission
-router.post('/:id/members', requireAuth, async (req, res, next) => {
+router.post('/:id/members', requireAuth, requireMissionMember, requireGesamtlead, validate(schemas.addMissionMember), async (req, res, next) => {
   try {
     const { user_id, role } = req.body;
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });

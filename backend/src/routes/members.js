@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { requireMissionMember, getUnitsByIdsForMission, isSubsetOf, normalizeUuidArray } = require('../auth/teamAuth');
+const { requireMissionMember, getUnitsByIdsForMission, getUnitAccessContext, canEditUnit, isSubsetOf, normalizeUuidArray } = require('../auth/teamAuth');
 const { broadcastToMission } = require('../socket');
 
 async function groupsExistInMission(missionId, groupIds) {
@@ -57,6 +57,21 @@ async function sanitizeAssignments(req, missionId, targetRole, rawGroupIds, rawU
   }
 
   return { assignedGroupIds: [], assignedUnitIds };
+}
+
+async function sanitizePrimaryUnit(req, missionId, primaryUnitId) {
+  if (primaryUnitId === undefined) return { skip: true };
+  if (primaryUnitId === null || primaryUnitId === '') return { value: null };
+
+  const unit = await getUnitAccessContext(primaryUnitId);
+  if (!unit || unit.mission_id !== missionId) {
+    return { error: 'Primary unit is invalid' };
+  }
+  if (!(await canEditUnit(req, unit)) && req.missionRole !== 'gesamtlead') {
+    return { error: 'Primary unit must be inside your managed scope' };
+  }
+
+  return { value: primaryUnitId };
 }
 
 // ---- Join by code (creates a join request) ----
@@ -120,7 +135,7 @@ router.post('/:mission_id/requests/:requestId/accept', requireAuth, requireMissi
       }
     }
 
-    const { mission_role, assigned_group_ids, assigned_unit_ids } = req.body;
+    const { mission_role, assigned_group_ids, assigned_unit_ids, primary_unit_id } = req.body;
     const validRoles = ['gesamtlead', 'gruppenlead', 'teamlead'];
     if (!validRoles.includes(mission_role)) {
       return res.status(400).json({ error: 'mission_role must be gesamtlead, gruppenlead, or teamlead' });
@@ -152,16 +167,30 @@ router.post('/:mission_id/requests/:requestId/accept', requireAuth, requireMissi
     // Map mission role to user_role (system level)
     const sysRole = mission_role === 'gesamtlead' ? 'leader' : 'member';
 
+    const primaryUnit = await sanitizePrimaryUnit(req, req.params.mission_id, primary_unit_id);
+    if (primaryUnit.error) {
+      return res.status(400).json({ error: primaryUnit.error });
+    }
+
     // Add as mission member
     await query(
-      `INSERT INTO mission_members (mission_id, user_id, role, mission_role, assigned_group_ids, assigned_unit_ids)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO mission_members (mission_id, user_id, role, mission_role, assigned_group_ids, assigned_unit_ids, primary_unit_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (mission_id, user_id) DO UPDATE SET
          role = EXCLUDED.role,
          mission_role = EXCLUDED.mission_role,
          assigned_group_ids = EXCLUDED.assigned_group_ids,
-         assigned_unit_ids = EXCLUDED.assigned_unit_ids`,
-      [req.params.mission_id, request.user_id, sysRole, mission_role, sanitized.assignedGroupIds, sanitized.assignedUnitIds]
+         assigned_unit_ids = EXCLUDED.assigned_unit_ids,
+         primary_unit_id = EXCLUDED.primary_unit_id`,
+      [
+        req.params.mission_id,
+        request.user_id,
+        sysRole,
+        mission_role,
+        sanitized.assignedGroupIds,
+        sanitized.assignedUnitIds,
+        primaryUnit.skip ? null : primaryUnit.value,
+      ]
     );
 
     // Mark request as accepted
@@ -175,6 +204,7 @@ router.post('/:mission_id/requests/:requestId/accept', requireAuth, requireMissi
       mission_role,
       assigned_group_ids: sanitized.assignedGroupIds,
       assigned_unit_ids: sanitized.assignedUnitIds,
+      primary_unit_id: primaryUnit.skip ? null : primaryUnit.value,
     });
 
     res.json({ message: 'Join request accepted' });
@@ -217,7 +247,7 @@ router.get('/:mission_id/members', requireAuth, requireMissionMember, async (req
 // ---- Update a member's role / assigned groups ----
 router.put('/:mission_id/members/:userId', requireAuth, requireMissionMember, async (req, res, next) => {
   try {
-    const { mission_role, assigned_group_ids, assigned_unit_ids } = req.body;
+    const { mission_role, assigned_group_ids, assigned_unit_ids, primary_unit_id } = req.body;
 
     const target = await query(
       'SELECT mission_role FROM mission_members WHERE mission_id = $1 AND user_id = $2',
@@ -243,6 +273,10 @@ router.put('/:mission_id/members/:userId', requireAuth, requireMissionMember, as
       || assigned_unit_ids !== undefined;
 
     let sanitized = null;
+    const sanitizedPrimaryUnit = await sanitizePrimaryUnit(req, req.params.mission_id, primary_unit_id);
+    if (sanitizedPrimaryUnit.error) {
+      return res.status(400).json({ error: sanitizedPrimaryUnit.error });
+    }
     if (shouldUpdateAssignments) {
       sanitized = await sanitizeAssignments(
         req,
@@ -255,6 +289,7 @@ router.put('/:mission_id/members/:userId', requireAuth, requireMissionMember, as
         return res.status(400).json({ error: sanitized.error });
       }
     }
+    const shouldUpdatePrimaryUnit = primary_unit_id !== undefined;
 
     const updates = [];
     const values = [];
@@ -270,6 +305,10 @@ router.put('/:mission_id/members/:userId', requireAuth, requireMissionMember, as
       updates.push(`assigned_unit_ids = $${idx++}`);
       values.push(sanitized.assignedUnitIds);
     }
+    if (shouldUpdatePrimaryUnit) {
+      updates.push(`primary_unit_id = $${idx++}`);
+      values.push(sanitizedPrimaryUnit.value);
+    }
 
     if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
 
@@ -284,6 +323,7 @@ router.put('/:mission_id/members/:userId', requireAuth, requireMissionMember, as
       mission_role: nextRole,
       assigned_group_ids: sanitized?.assignedGroupIds,
       assigned_unit_ids: sanitized?.assignedUnitIds,
+      primary_unit_id: shouldUpdatePrimaryUnit ? sanitizedPrimaryUnit.value : undefined,
     });
 
     res.json({ message: 'Member updated' });

@@ -1,5 +1,8 @@
 # KRT-Leadtool Docker Compose Stack
-# Usage: docker compose up -d
+# Usage examples:
+# - Leadtool only: APP_MODULES=leadtool docker compose --profile leadtool up -d
+# - Voice only: APP_MODULES=voice docker compose up -d backend postgres valkey
+# - Combined: APP_MODULES=leadtool,voice docker compose --profile combined up -d
 # Requires: .env file (copy from example.env)
 
 services:
@@ -7,6 +10,7 @@ services:
   # Nginx - Reverse Proxy + SSL + Static Frontend
   # ============================================================
   nginx:
+    profiles: ["leadtool", "combined"]
     image: nginx:alpine
     container_name: krt-nginx
     restart: unless-stopped
@@ -49,6 +53,7 @@ services:
       dockerfile: Dockerfile.backend
     environment:
       - NODE_ENV=${NODE_ENV}
+      - APP_MODULES=${APP_MODULES}
       - APP_PORT=${APP_PORT}
       - APP_URL=${APP_URL}
       - POSTGRES_USER=${POSTGRES_USER}
@@ -62,6 +67,7 @@ services:
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
       - DISCORD_CALLBACK_URL=${DISCORD_CALLBACK_URL}
+      - COMPANION_DISCORD_CALLBACK_URL=${COMPANION_DISCORD_CALLBACK_URL}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRY=${JWT_EXPIRY}
       - SESSION_SECRET=${SESSION_SECRET}
@@ -92,6 +98,7 @@ services:
   # Frontend - React + Three.js (build stage, output to volume)
   # ============================================================
   frontend:
+    profiles: ["leadtool", "combined"]
     image: ghcr.io/davidertl/krt-leadtool-frontend:latest
     container_name: krt-frontend
     build:
@@ -183,6 +190,7 @@ services:
   # Uptime Kuma - Monitoring Dashboard
   # ============================================================
   uptime-kuma:
+    profiles: ["ops"]
     image: louislam/uptime-kuma:1
     container_name: krt-uptime-kuma
     restart: unless-stopped
@@ -200,6 +208,7 @@ services:
   # Watchtower - Auto-update containers from GHCR
   # ============================================================
   watchtower:
+    profiles: ["ops"]
     image: containrrr/watchtower
     container_name: krt-watchtower
     restart: unless-stopped
@@ -225,6 +234,7 @@ services:
   # Certbot - Let's Encrypt SSL certificate management
   # ============================================================
   certbot:
+    profiles: ["leadtool", "combined"]
     image: certbot/certbot:latest
     container_name: krt-certbot
     environment:

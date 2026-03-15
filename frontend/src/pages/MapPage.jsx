@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useMissionStore } from '../stores/missionStore';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import SpaceMap from '../components/SpaceMap';
@@ -26,13 +26,12 @@ async function safeFetch(url, opts, fallback = []) {
 
 export default function MapPage() {
   const { missionId } = useParams();
-  const navigate = useNavigate();
   const {
     setMissionId, setUnits, setGroups, setWaypoints, setContacts, setTasks,
     setOperations, setEvents, setMessages, setBookmarks, setNavData,
     setActiveSystemId, setLastSyncTime, loadFromCache,
+    setMissionInfo,
     setMembers, setJoinRequests, setMyMissionRole, setMyAssignedGroups, setMyAssignedUnits,
-    addJoinRequest, removeJoinRequest,
   } = useMissionStore();
 
   useEffect(() => {
@@ -74,6 +73,7 @@ export default function MapPage() {
 
         // Set current user's mission role from the mission info
         if (missionInfo && missionInfo.mission_role) {
+          setMissionInfo(missionInfo);
           setMyMissionRole(missionInfo.mission_role);
           setMyAssignedGroups(missionInfo.assigned_group_ids || []);
           setMyAssignedUnits(missionInfo.assigned_unit_ids || []);

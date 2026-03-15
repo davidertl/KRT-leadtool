@@ -13,13 +13,14 @@ const { broadcastToMission } = require('../socket');
  * @param {string} params.event_type   - e.g. 'task_created', 'contact_reported', 'op_phase_change'
  * @param {string} params.message      - Human-readable summary
  * @param {string} [params.user_id]    - UUID of the acting user (optional)
+ * @param {string} [params.details]    - Optional event details
  * @param {object} [params.metadata]   - Additional JSON metadata (optional)
  */
-async function insertEventLog({ mission_id, operation_id, event_type, message, user_id, unit_id, metadata }) {
+async function insertEventLog({ mission_id, operation_id, event_type, message, user_id, unit_id, details, metadata }) {
   const result = await query(
-    `INSERT INTO event_log (mission_id, operation_id, user_id, unit_id, event, title, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [mission_id, operation_id || null, user_id || null, unit_id || null, event_type, message, metadata ? JSON.stringify(metadata) : null]
+    `INSERT INTO event_log (mission_id, operation_id, user_id, unit_id, event, title, details, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [mission_id, operation_id || null, user_id || null, unit_id || null, event_type, message, details || null, metadata ? JSON.stringify(metadata) : null]
   );
   const row = result.rows[0];
   broadcastToMission(mission_id, 'event:created', row);

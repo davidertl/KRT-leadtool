@@ -5,21 +5,16 @@
 const router = require('express').Router();
 const { query } = require('../db/postgres');
 const { requireAuth } = require('../auth/jwt');
-const { requireMissionMember, canEditUnit, getUnitAccessContext } = require('../auth/teamAuth');
-const { broadcastToMission } = require('../socket');
+const { requireMissionMember } = require('../auth/teamAuth');
 const { z } = require('zod');
 const { validate } = require('../validation/middleware');
+const { applyStatusMessage } = require('../services/statusUpdates');
 
 const MSG_TYPES = [
   'checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom', 'under_attack',
   // Status preset types (from Class_setup.md)
   'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'damaged', 'disabled',
 ];
-
-/** Status message types that map 1:1 to unit status values */
-const STATUS_MSG_TYPES = new Set([
-  'boarding', 'ready_for_takeoff', 'on_the_way', 'arrived', 'ready_for_orders', 'in_combat', 'heading_home', 'damaged', 'disabled',
-]);
 
 const createMessage = z.object({
   mission_id: z.string().uuid(),
@@ -52,100 +47,19 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
 router.post('/', requireAuth, validate(createMessage), requireMissionMember, async (req, res, next) => {
   try {
     const { mission_id, unit_id, message_type, message, recipient_type, recipient_id } = req.body;
-
-    // ── Auto-update unit status when a status message is sent ──
-    const isStatusMsg = STATUS_MSG_TYPES.has(message_type);
-    let updatedUnits = []; // track all units whose status changed (for broadcasting)
-
-    if (isStatusMsg && unit_id) {
-      const unitAccess = await getUnitAccessContext(unit_id);
-      if (!unitAccess || unitAccess.mission_id !== mission_id) {
-        return res.status(400).json({ error: 'Selected unit does not belong to this mission' });
-      }
-      if (!(await canEditUnit(req, unitAccess))) {
-        return res.status(403).json({ error: 'Insufficient permissions to update this unit status' });
-      }
-
-      const previousUnit = await query(
-        `SELECT id, status, unit_type, parent_unit_id
-         FROM units
-         WHERE id = $1`,
-        [unit_id]
-      );
-      const oldStatus = previousUnit.rows[0]?.status ?? null;
-
-      // 1. Update the reporting unit's status
-      const unitRes = await query(
-        `UPDATE units SET status = $1 WHERE id = $2 RETURNING *`,
-        [message_type, unit_id]
-      );
-      if (unitRes.rows.length > 0) {
-        const updatedUnit = unitRes.rows[0];
-        updatedUnits.push(updatedUnit);
-        broadcastToMission(mission_id, 'unit:updated', updatedUnit);
-
-        // Record status change in history
-        await query(
-          `INSERT INTO status_history (unit_id, field_changed, old_value, new_value, changed_by)
-           VALUES ($1, 'status', $2, $3, $4)`,
-          [unit_id, JSON.stringify(oldStatus), JSON.stringify(message_type), req.user.id]
-        ).catch(() => {}); // non-critical
-
-        // 2. If the unit is a person aboard a ship, check ship auto-aggregate
-        if (updatedUnit.unit_type === 'person' && updatedUnit.parent_unit_id) {
-          const shipId = updatedUnit.parent_unit_id;
-          // Get all persons aboard this ship
-          const personsRes = await query(
-            `SELECT id, status FROM units WHERE parent_unit_id = $1 AND unit_type = 'person'`,
-            [shipId]
-          );
-          const persons = personsRes.rows;
-          // If all persons have the same status, update the ship
-          if (persons.length > 0 && persons.every((p) => p.status === message_type)) {
-            const shipRes = await query(
-              `UPDATE units SET status = $1 WHERE id = $2 AND status != $1 RETURNING *`,
-              [message_type, shipId]
-            );
-            if (shipRes.rows.length > 0) {
-              updatedUnits.push(shipRes.rows[0]);
-              broadcastToMission(mission_id, 'unit:updated', shipRes.rows[0]);
-            }
-          }
-        }
-      }
-    }
-
-    // ── Insert the message row ──
-    // For "system" messages, still store them but mark them so the frontend can filter
-    const result = await query(
-      `INSERT INTO quick_messages (mission_id, user_id, unit_id, message_type, message, recipient_type, recipient_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [mission_id, req.user.id, unit_id || null, message_type, message, recipient_type || null, recipient_id || null]
-    );
-
-    // Log to event_log (for system messages, use a descriptive event)
-    const unitInfo = unit_id ? (await query('SELECT name, callsign FROM units WHERE id = $1', [unit_id])).rows[0] : null;
-    const unitLabel = unitInfo ? (unitInfo.callsign || unitInfo.name) : 'Unknown';
-    const eventTitle = isStatusMsg
-      ? `${unitLabel} status → ${message_type}`
-      : `${message_type.toUpperCase()}: ${message || message_type}`;
-    const eventType = isStatusMsg ? 'status_change'
-      : 'custom';
-
-    await query(
-      `INSERT INTO event_log (mission_id, user_id, unit_id, event, title, details)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [mission_id, req.user.id, unit_id || null, eventType, eventTitle, message]
-    );
-
-    // Broadcast the message (frontend will filter system messages out of Recent Messages)
-    broadcastToMission(mission_id, 'message:created', result.rows[0]);
-
-    // Return the message + any units that were updated
-    const response = result.rows[0];
-    if (updatedUnits.length > 0) {
-      response.updated_units = updatedUnits;
-    }
+    const response = await applyStatusMessage({
+      actor: req.user,
+      missionId: mission_id,
+      unitId: unit_id || null,
+      messageType: message_type,
+      message,
+      recipientType: recipient_type || null,
+      recipientId: recipient_type !== 'all' && recipient_type !== 'system' && recipient_type !== 'lead'
+        ? recipient_id || null
+        : null,
+      source: 'web',
+      permissionContext: { req },
+    });
     res.status(201).json(response);
   } catch (err) { next(err); }
 });

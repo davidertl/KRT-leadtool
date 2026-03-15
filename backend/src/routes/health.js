@@ -6,11 +6,13 @@ const router = require('express').Router();
 const { pool } = require('../db/postgres');
 const { valkey } = require('../db/valkey');
 const pkg = require('../../package.json');
+const { getEnabledModules } = require('../config/modules');
 
 router.get('/', async (req, res) => {
   const health = {
     status: 'ok',
     version: pkg.version,
+    modules: getEnabledModules(),
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {},

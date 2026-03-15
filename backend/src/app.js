@@ -11,6 +11,7 @@ const session = require('express-session');
 const { RedisStore } = require('connect-redis');
 const passport = require('passport');
 const { valkey } = require('./db/valkey');
+const { getEnabledModules } = require('./config/modules');
 
 // Route imports
 const healthRoutes = require('./routes/health');
@@ -33,70 +34,90 @@ const membersRoutes = require('./routes/members');
 const operationPhasesRoutes = require('./routes/operationPhases');
 const operationRoeRoutes = require('./routes/operationRoe');
 const operationNotesRoutes = require('./routes/operationNotes');
+const companionRoutes = require('./routes/companion');
 
 // Passport config
 require('./auth/discord');
 
-const app = express();
+function createApp({ enabledModules = getEnabledModules(), extraRouteRegistrations = [] } = {}) {
+  const app = express();
+  const modules = new Set(enabledModules);
 
-// ---- Middleware ----
-app.use(helmet({ contentSecurityPolicy: false })); // CSP handled by Nginx
-app.use(cors({
-  origin: process.env.APP_URL || 'http://localhost:5173',
-  credentials: true,
-}));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+  // ---- Middleware ----
+  app.use(helmet({ contentSecurityPolicy: false })); // CSP handled by Nginx
+  app.use(cors({
+    origin: process.env.APP_URL || 'http://localhost:5173',
+    credentials: true,
+  }));
+  app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser());
+  app.set('trust proxy', 1);
 
-// Session (needed for Passport OAuth2 flow) — backed by Valkey (Redis-compatible)
-app.use(session({
-  store: new RedisStore({ client: valkey, prefix: 'krt:sess:' }),
-  secret: process.env.SESSION_SECRET || 'dev-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  },
-}));
+  // Session (needed for Passport OAuth2 flow) — backed by Valkey (Redis-compatible)
+  app.use(session({
+    store: new RedisStore({ client: valkey, prefix: 'krt:sess:' }),
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    },
+  }));
 
-app.use(passport.initialize());
-app.use(passport.session());
+  app.use(passport.initialize());
+  app.use(passport.session());
 
-// ---- Routes ----
-app.use('/api/health', healthRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/missions', missionsRoutes);
-app.use('/api/units', unitsRoutes);
-app.use('/api/groups', groupsRoutes);
-app.use('/api/waypoints', waypointsRoutes);
-app.use('/api/history', historyRoutes);
-app.use('/api/sync', syncRoutes);
-app.use('/api/contacts', contactsRoutes);
-app.use('/api/tasks', tasksRoutes);
-app.use('/api/ship-images', shipImageRoutes);
-app.use('/api/navigation', navigationRoutes);
-app.use('/api/operations', operationsRoutes);
-app.use('/api/events', eventsRoutes);
-app.use('/api/messages', messagesRoutes);
-app.use('/api/bookmarks', bookmarksRoutes);
-app.use('/api/members', membersRoutes);
-app.use('/api/operation-phases', operationPhasesRoutes);
-app.use('/api/operation-roe', operationRoeRoutes);
-app.use('/api/operation-notes', operationNotesRoutes);
+  // ---- Base routes ----
+  app.use('/api/health', healthRoutes);
+  app.use('/api/auth', authRoutes);
 
-// ---- Error handler ----
-app.use((err, req, res, _next) => {
-  console.error('[KRT] Error:', err.message);
-  res.status(err.status || 500).json({
-    error: process.env.NODE_ENV === 'production'
-      ? 'Internal server error'
-      : err.message,
+  if (modules.has('leadtool')) {
+    app.use('/api/missions', missionsRoutes);
+    app.use('/api/units', unitsRoutes);
+    app.use('/api/groups', groupsRoutes);
+    app.use('/api/waypoints', waypointsRoutes);
+    app.use('/api/history', historyRoutes);
+    app.use('/api/sync', syncRoutes);
+    app.use('/api/contacts', contactsRoutes);
+    app.use('/api/tasks', tasksRoutes);
+    app.use('/api/ship-images', shipImageRoutes);
+    app.use('/api/navigation', navigationRoutes);
+    app.use('/api/operations', operationsRoutes);
+    app.use('/api/events', eventsRoutes);
+    app.use('/api/messages', messagesRoutes);
+    app.use('/api/bookmarks', bookmarksRoutes);
+    app.use('/api/members', membersRoutes);
+    app.use('/api/operation-phases', operationPhasesRoutes);
+    app.use('/api/operation-roe', operationRoeRoutes);
+    app.use('/api/operation-notes', operationNotesRoutes);
+  }
+
+  if (modules.has('voice')) {
+    app.use('/api/companion', companionRoutes);
+  }
+
+  for (const registration of extraRouteRegistrations) {
+    if (registration?.basePath && registration?.router) {
+      app.use(registration.basePath, registration.router);
+    }
+  }
+
+  // ---- Error handler ----
+  app.use((err, req, res, _next) => {
+    console.error('[KRT] Error:', err.message);
+    res.status(err.status || 500).json({
+      error: process.env.NODE_ENV === 'production'
+        ? 'Internal server error'
+        : err.message,
+    });
   });
-});
 
-module.exports = app;
+  return app;
+}
+
+module.exports = { createApp };

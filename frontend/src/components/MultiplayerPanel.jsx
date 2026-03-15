@@ -38,7 +38,7 @@ function RoleBadge({ role }) {
 }
 
 export default function MultiplayerPanel({ missionId }) {
-  const { members, joinRequests, groups, units, myMissionRole, myAssignedGroups, onlineUsers, removeJoinRequest, addJoinRequest } = useMissionStore();
+  const { members, joinRequests, groups, units, myMissionRole, myAssignedGroups, onlineUsers } = useMissionStore();
   const canManage = myMissionRole === 'gesamtlead' || myMissionRole === 'gruppenlead';
   const manageableGroups = getManageableGroups(groups, myMissionRole, myAssignedGroups);
   const manageableShips = getManageableShips(units, manageableGroups, myMissionRole);
@@ -50,6 +50,9 @@ export default function MultiplayerPanel({ missionId }) {
 
       {/* Public / Private toggle (gesamtlead only) */}
       {myMissionRole === 'gesamtlead' && <VisibilityToggle missionId={missionId} />}
+
+      {/* Companion status bridge toggle (gesamtlead only) */}
+      {myMissionRole === 'gesamtlead' && <CompanionStatusSyncToggle missionId={missionId} />}
 
       {/* Update Starmap (gesamtlead only) */}
       {myMissionRole === 'gesamtlead' && <UpdateStarmapButton />}
@@ -75,7 +78,18 @@ export default function MultiplayerPanel({ missionId }) {
         </label>
         <div className="space-y-1">
           {members.map((m) => (
-            <MemberRow key={m.user_id} member={m} missionId={missionId} groups={manageableGroups} ships={manageableShips} allGroups={groups} allShips={getManageableShips(units, groups, 'gesamtlead')} onlineUsers={onlineUsers} myRole={myMissionRole} />
+            <MemberRow
+              key={m.user_id}
+              member={m}
+              missionId={missionId}
+              groups={manageableGroups}
+              ships={manageableShips}
+              allGroups={groups}
+              allShips={getManageableShips(units, groups, 'gesamtlead')}
+              allUnits={units}
+              onlineUsers={onlineUsers}
+              myRole={myMissionRole}
+            />
           ))}
         </div>
       </div>
@@ -95,6 +109,78 @@ export default function MultiplayerPanel({ missionId }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CompanionStatusSyncToggle({ missionId }) {
+  const [enabled, setEnabled] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/missions/${missionId}`, { credentials: 'include' })
+      .then((response) => response.json())
+      .then((mission) => setEnabled(mission.settings?.companion_status_sync_enabled !== false))
+      .catch(() => {});
+  }, [missionId]);
+
+  const toggle = async () => {
+    setLoading(true);
+    try {
+      const missionRes = await fetch(`/api/missions/${missionId}`, { credentials: 'include' });
+      if (!missionRes.ok) throw new Error('Failed to load mission settings');
+      const mission = await missionRes.json();
+      const nextEnabled = !(mission.settings?.companion_status_sync_enabled !== false);
+
+      const res = await fetch(`/api/missions/${missionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          settings: {
+            ...(mission.settings || {}),
+            companion_status_sync_enabled: nextEnabled,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error('Failed');
+
+      setEnabled(nextEnabled);
+      toast.success(nextEnabled
+        ? 'Companion status sync enabled'
+        : 'Companion status sync disabled');
+    } catch {
+      toast.error('Failed to update companion sync');
+    }
+    setLoading(false);
+  };
+
+  if (enabled === null) return null;
+
+  return (
+    <div className="bg-krt-bg/80 rounded-lg p-3 flex items-center justify-between">
+      <div>
+        <label className="text-xs text-gray-500 block">Companion Sync</label>
+        <span className={`text-sm font-medium ${enabled ? 'text-cyan-400' : 'text-amber-400'}`}>
+          {enabled ? 'Linked to Leadtool Status' : 'Voice Only Mode'}
+        </span>
+        <p className="text-[10px] text-gray-600">
+          {enabled
+            ? 'Companion status updates change unit status in the leadtool.'
+            : 'Companion voice relay stays active, but status updates are ignored temporarily.'}
+        </p>
+      </div>
+      <button
+        onClick={toggle}
+        disabled={loading}
+        className={`text-xs px-3 py-1 rounded border transition-colors disabled:opacity-50 ${
+          enabled
+            ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10'
+            : 'border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10'
+        }`}
+      >
+        {enabled ? 'Disable Status Link' : 'Enable Status Link'}
+      </button>
     </div>
   );
 }
@@ -281,7 +367,7 @@ function JoinRequestCard({ jr, missionId, groups, ships, myRole }) {
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [selectedUnits, setSelectedUnits] = useState([]);
   const [busy, setBusy] = useState(false);
-  const { removeJoinRequest, setMembers, members } = useMissionStore();
+  const { removeJoinRequest, setMembers } = useMissionStore();
 
   const handleAccept = async () => {
     setBusy(true);
@@ -447,16 +533,28 @@ function JoinRequestCard({ jr, missionId, groups, ships, myRole }) {
 }
 
 /** Single member row with role editing */
-function MemberRow({ member, missionId, groups, ships, allGroups, allShips, onlineUsers, myRole }) {
+function MemberRow({ member, missionId, groups, ships, allGroups, allShips, allUnits, onlineUsers, myRole }) {
   const [editing, setEditing] = useState(false);
   const [role, setRole] = useState(member.mission_role || 'teamlead');
   const [assignedGroups, setAssignedGroups] = useState(member.assigned_group_ids || []);
   const [assignedUnits, setAssignedUnits] = useState(member.assigned_unit_ids || []);
+  const [primaryUnitId, setPrimaryUnitId] = useState(member.primary_unit_id || '');
   const [busy, setBusy] = useState(false);
-  const { updateMember, removeMember, setMembers, members } = useMissionStore();
+  const { updateMember, removeMember } = useMissionStore();
 
   const isOnline = onlineUsers.some((u) => u.id === member.user_id);
   const canEdit = myRole === 'gesamtlead' || (myRole === 'gruppenlead' && member.mission_role === 'teamlead');
+
+  const primaryCandidates = allUnits.filter((unit) => {
+    if (role === 'gesamtlead') return true;
+    if (role === 'gruppenlead') {
+      return unit.group_id && assignedGroups.includes(unit.group_id);
+    }
+    if (role === 'teamlead') {
+      return unit.unit_type === 'person' && unit.parent_unit_id && assignedUnits.includes(unit.parent_unit_id);
+    }
+    return false;
+  });
 
   const handleSave = async () => {
     setBusy(true);
@@ -469,6 +567,7 @@ function MemberRow({ member, missionId, groups, ships, allGroups, allShips, onli
           mission_role: role,
           assigned_group_ids: role === 'gruppenlead' ? assignedGroups : [],
           assigned_unit_ids: role === 'teamlead' ? assignedUnits : [],
+          primary_unit_id: primaryUnitId || null,
         }),
       });
       if (!res.ok) throw new Error('Failed');
@@ -477,6 +576,7 @@ function MemberRow({ member, missionId, groups, ships, allGroups, allShips, onli
         mission_role: role,
         assigned_group_ids: role === 'gruppenlead' ? assignedGroups : [],
         assigned_unit_ids: role === 'teamlead' ? assignedUnits : [],
+        primary_unit_id: primaryUnitId || null,
       });
       setEditing(false);
       toast.success('Role updated');
@@ -561,6 +661,18 @@ function MemberRow({ member, missionId, groups, ships, allGroups, allShips, onli
         </div>
       )}
 
+      {member.primary_unit_id && !editing && (() => {
+        const primaryUnit = allUnits.find((unit) => unit.id === member.primary_unit_id);
+        if (!primaryUnit) return null;
+        return (
+          <div className="mt-1">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300">
+              Primary: {primaryUnit.callsign ? `[${primaryUnit.callsign}] ` : ''}{primaryUnit.name}
+            </span>
+          </div>
+        );
+      })()}
+
       {/* Edit panel */}
       {editing && canEdit && (
         <div className="mt-2 space-y-2 border-t border-krt-border pt-2">
@@ -576,6 +688,7 @@ function MemberRow({ member, missionId, groups, ships, allGroups, allShips, onli
                     setAssignedGroups([]);
                     setAssignedUnits([]);
                   }
+                  setPrimaryUnitId('');
                 }}
                 className={`text-xs px-2 py-1 rounded transition-colors ${
                   role === r ? 'text-white' : 'text-gray-400 bg-krt-panel border border-krt-border hover:text-white'
@@ -622,6 +735,21 @@ function MemberRow({ member, missionId, groups, ships, allGroups, allShips, onli
               ))}
             </div>
           )}
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Primary reporting unit</label>
+            <select
+              value={primaryUnitId}
+              onChange={(event) => setPrimaryUnitId(event.target.value)}
+              className="w-full bg-krt-bg border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent"
+            >
+              <option value="">No bound unit</option>
+              {primaryCandidates.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.callsign ? `[${unit.callsign}] ` : ''}{unit.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex gap-2">
             <button onClick={handleSave} disabled={busy} className="bg-krt-accent text-white text-xs px-3 py-1 rounded">
               Save
