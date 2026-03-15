@@ -30,6 +30,10 @@ Thumbs.db
 .idea/
 .vscode/
 *.code-workspace
+.cursor/
+.github/
+.git/
+.tmp*/
 
 # Logs
 *.log
