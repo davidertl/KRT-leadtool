@@ -1006,7 +1006,7 @@
                 <!-- Verify Status Text -->
                 <TextBlock Text="{Binding VerifyStatusText}" Foreground="{StaticResource TextSecondary}" 
                            FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
-                <TextBlock Text="Tip: For public servers use domain + port 443 (TLS via Traefik). For local development use localhost + 3000."
+                <TextBlock Text="Tip: Use the voice host (e.g. voice.yourdomain.com) with port 443 — not the main website URL. For local dev use localhost + 3000."
                            Foreground="{StaticResource TextSecondary}" FontSize="10" Margin="0,0,0,10" TextWrapping="Wrap"/>
 
                 <!-- Server Status Info (shown after verification) -->

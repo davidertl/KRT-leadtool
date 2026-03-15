@@ -979,7 +979,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             var statusResult = await BackendClient.GetServerStatusAsync(baseUrl);
             if (statusResult.Data == null)
             {
-                VerifyStatusText = statusResult.Error ?? "Server not reachable or invalid response";
+                var msg = statusResult.Error ?? "Server not reachable or invalid response";
+                var hint = " Use the voice host (e.g. voice.yourdomain.com) with port 443.";
+                if (msg.Contains("503") || msg.Contains("502") || msg.Contains("504"))
+                    hint += " 503/502/504 usually means the server backend is not healthy — ask the operator to check.";
+                else if (!endpoint.Host.Contains("voice", StringComparison.OrdinalIgnoreCase))
+                    hint += " You may have entered the main website URL — the Companion needs the voice host.";
+                VerifyStatusText = msg + hint;
                 return;
             }
             var status = statusResult.Data;

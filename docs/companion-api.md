@@ -9,7 +9,7 @@ This document describes the server contract that the **Companion App** (in `comp
 | **App host** (`DOMAIN`, e.g. `yourdomain.com`) | WebUI, main REST API, Socket.IO, main Discord OAuth callback |
 | **Voice host** (`VOICE_DOMAIN`, e.g. `voice.yourdomain.com`) | Companion auth, voice REST, voice WebSocket |
 
-The Companion App must be configured with the **voice host** URL (HTTPS, port 443). It does not use the app host for its API.
+The Companion App must be configured with the **voice host** URL (HTTPS, port 443). It does not use the app host for its API. If verification fails, common causes are: (1) deployment — backend or Nginx not healthy (503), see README "Deployment verification" and "Troubleshooting"; (2) wrong host — user entered the main website URL instead of the voice host.
 
 ## Required Discord OAuth redirect URIs
 
@@ -80,7 +80,9 @@ Voice audio is **end-to-end encrypted** so the server never has access to plaint
 
 ## Operator checklist
 
-- [ ] `VOICE_DOMAIN` and `COMPANION_DISCORD_CALLBACK_URL` set in `.env`
+- [ ] `VOICE_DOMAIN` and `COMPANION_DISCORD_CALLBACK_URL` set in `.env` (e.g. `VOICE_DOMAIN=voice.yourdomain.com`, `COMPANION_DISCORD_CALLBACK_URL=https://voice.yourdomain.com/api/companion/auth/callback`)
 - [ ] Discord app has redirect URI `https://<VOICE_DOMAIN>/api/companion/auth/callback`
+- [ ] DNS for `VOICE_DOMAIN` points to the same server as `DOMAIN`; Certbot certificate covers `DOMAIN`, `STATUS_DOMAIN`, and `VOICE_DOMAIN`
 - [ ] Nginx (or reverse proxy) serves the voice host and proxies `/api/companion`, `/api/voice`, and `/voice` to the backend
 - [ ] `APP_MODULES` includes `voice` so the backend mounts companion and voice routes
+- [ ] Post-deploy: backend is healthy, then `curl -sS https://<VOICE_DOMAIN>/api/companion/server-status` returns JSON with `ok: true`. If 503, see README "Deployment verification" and "Troubleshooting"

@@ -273,7 +273,7 @@ services:
       if [ "$$NEED_CERT" = "1" ]; then
         echo "[KRT-Certbot] No matching multi-host certificate found. Requesting from Lets Encrypt...";
         sleep 15;
-        certbot certonly --webroot -w /var/www/certbot $$DOMAIN_ARGS --email $${CERTBOT_EMAIL} --agree-tos --no-eff-email --non-interactive &&
+        certbot certonly --webroot -w /var/www/certbot $$DOMAIN_ARGS --email $${CERTBOT_EMAIL} --agree-tos --no-eff-email --non-interactive --expand &&
         echo "[KRT-Certbot] Certificate obtained!" ||
         echo "[KRT-Certbot] Request failed (will retry on next restart).";
       fi;

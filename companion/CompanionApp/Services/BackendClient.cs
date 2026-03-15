@@ -101,7 +101,13 @@ public sealed class BackendClient : IDisposable
             using var resp = await http.GetAsync(url);
             if (!resp.IsSuccessStatusCode)
             {
-                result.Error = $"Server returned HTTP {(int)resp.StatusCode} ({resp.ReasonPhrase}).";
+                var code = (int)resp.StatusCode;
+                if (code == 503)
+                    result.Error = "Server unavailable (503). The backend may not be running or healthy — ask the server operator to check backend and Nginx.";
+                else if (code == 502 || code == 504)
+                    result.Error = $"Server proxy error ({code}). The backend may be down or slow — ask the server operator to check backend health.";
+                else
+                    result.Error = $"Server returned HTTP {code} ({resp.ReasonPhrase}).";
                 return result;
             }
 

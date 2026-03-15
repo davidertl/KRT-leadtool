@@ -45,7 +45,8 @@ docker compose --profile combined run --rm certbot certonly \
   --email "$EMAIL" \
   --agree-tos \
   --no-eff-email \
-  --force-renewal
+  --expand \
+  --non-interactive
 
 # Step 3: Reload nginx with the real certificate
 echo "[3/3] Reloading nginx with new certificate..."
