@@ -15,19 +15,9 @@ CERT_FILE="${CERT_DIR}/fullchain.pem"
 KEY_FILE="${CERT_DIR}/privkey.pem"
 CONF_TARGET="/etc/nginx/conf.d/default.conf"
 
-certificate_covers_host() {
-    HOST="$1"
-    if [ -z "$HOST" ]; then
-        return 1
-    fi
-
-    openssl x509 -in "$CERT_FILE" -noout -checkhost "$HOST" >/dev/null 2>&1
-}
-
-if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ] \
-    && certificate_covers_host "$DOMAIN" \
-    && certificate_covers_host "$STATUS_DOMAIN" \
-    && certificate_covers_host "$VOICE_DOMAIN"; then
+# Rely on file existence only; nginx:alpine has no openssl for -checkhost.
+# Certbot is configured to issue for DOMAIN + STATUS_DOMAIN + VOICE_DOMAIN.
+if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
     echo "[KRT-Nginx] SSL certificate found for ${DOMAIN}."
     echo "[KRT-Nginx] Starting in SSL mode (port 80 redirect + port 443)."
 
