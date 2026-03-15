@@ -90,7 +90,10 @@ function createVoiceRelay({ query, valkey }) {
     let payload;
     try {
       payload = verifyToken(msg.authToken);
-    } catch {
+    } catch (err) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[voice] Auth verify failed:', err.message);
+      }
       send(ws, { type: 'auth_error', reason: 'invalid or expired token' });
       return;
     }

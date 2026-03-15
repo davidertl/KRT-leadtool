@@ -86,3 +86,16 @@ Voice audio is **end-to-end encrypted** so the server never has access to plaint
 - [ ] Nginx (or reverse proxy) serves the voice host and proxies `/api/companion`, `/api/voice`, and `/voice` to the backend
 - [ ] `APP_MODULES` includes `voice` so the backend mounts companion and voice routes
 - [ ] Post-deploy: backend is healthy, then `curl -sS https://<VOICE_DOMAIN>/api/companion/server-status` returns JSON with `ok: true`. If 503, see README "Deployment verification" and "Troubleshooting"
+
+## Troubleshooting: Voice WebSocket "invalid or expired token"
+
+The Companion connects to `wss://<VOICE_DOMAIN>/voice` and sends a first message `{ type: "auth", authToken: "<jwt>", guildId: "..." }`. The **auth token** is the same JWT the user received after Discord OAuth (from `/api/companion/auth/poll`). The backend relay verifies it with `JWT_SECRET` and requires `id` and `username` in the payload; it does not look up `companion_sessions`.
+
+**When the app shows "Auth failed: invalid or expired token":**
+
+- **JWT verification failed** — `jwt.verify(token, JWT_SECRET)` threw. Common causes:
+  1. **Token expired** — Companion JWTs expire after **24 hours**. Have the user **log out and log in again** in the Companion App to get a fresh token.
+  2. **JWT_SECRET changed** — After a server redeploy or `.env` change, previously issued tokens are invalid. Users must log in again.
+  3. **Wrong or corrupted token** — Stored token from another server or truncated/corrupted in config. Log out and log in again.
+
+**Server-side:** Ensure `JWT_SECRET` is set in `.env` and kept stable across restarts. If you need to debug, check backend logs; the relay can log the verification error (see [backend/src/modules/voice/relay.js](../backend/src/modules/voice/relay.js) `handleAuth`).
