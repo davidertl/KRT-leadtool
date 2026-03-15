@@ -487,23 +487,33 @@
                       MinHeight="28" Padding="6,4"/>
           </StackPanel>
           <StackPanel Grid.Row="2" Margin="0,0,0,8">
-            <TextBlock Text="Report for unit" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
-            <ComboBox ItemsSource="{Binding CommsReportableUnits}" SelectedValuePath="Id"
-                      SelectedValue="{Binding CommsSelectedUnitId, UpdateSourceTrigger=PropertyChanged}"
-                      MinHeight="28" Padding="6,4">
-              <ComboBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock>
-                    <TextBlock.Text>
-                      <MultiBinding StringFormat="{}{0} ({1})">
-                        <Binding Path="Callsign" FallbackValue=""/>
-                        <Binding Path="Name" FallbackValue="?"/>
-                      </MultiBinding>
-                    </TextBlock.Text>
-                  </TextBlock>
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <TextBlock Text="Report for unit" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+                <ComboBox ItemsSource="{Binding CommsReportableUnits}" SelectedValuePath="Id"
+                          SelectedValue="{Binding CommsSelectedUnitId, UpdateSourceTrigger=PropertyChanged}"
+                          MinHeight="28" Padding="6,4">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock>
+                        <TextBlock.Text>
+                          <MultiBinding StringFormat="{}{0} ({1})">
+                            <Binding Path="Callsign" FallbackValue=""/>
+                            <Binding Path="Name" FallbackValue="?"/>
+                          </MultiBinding>
+                        </TextBlock.Text>
+                      </TextBlock>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <Button Grid.Column="1" Content="Reset location" Margin="12,0,0,0" Padding="10,6" VerticalAlignment="Bottom"
+                      IsEnabled="{Binding CommsCanResetPosition}" Click="CommsResetLocation_Click"/>
+            </Grid>
           </StackPanel>
           <TextBlock Grid.Row="3" Text="{Binding CommsRoleLabel}" Foreground="{StaticResource TextSecondary}" 
                      FontSize="11" Margin="0,0,0,12"/>

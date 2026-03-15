@@ -45,7 +45,8 @@ All URLs below are relative to the voice host base (e.g. `https://voice.yourdoma
 |--------|------|-------------|
 | GET | `/api/companion/me` | Current user and mission list. |
 | GET | `/api/companion/bootstrap?mission_id=...` | Mission details, units, reportable_units. |
-| POST | `/api/companion/status` | Submit status message (mission_id, unit_id, message_type, message). |
+| POST | `/api/companion/status` | Submit status message (mission_id, unit_id, message_type, message). If no primary unit, a person is auto-created and set as primary. |
+| POST | `/api/companion/units/reset-position` | Reset unit position to origin (body: mission_id, unit_id). Gesamtlead: all; gruppenlead/teamlead: scope. |
 | POST | `/api/companion/auth/revoke` | Revoke current companion session. |
 | POST | `/api/companion/auth/accept-policy` | Accept privacy policy. |
 | POST | `/api/voice/tx-event` | Body: `freqId`, `action` (start/stop), optional `radioSlot`, `metadata`. Response includes `listener_count`. |

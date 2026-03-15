@@ -323,6 +323,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool CommsCanSend => !CommsStatusSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && IsLoggedIn;
 
+    private bool _commsResetPositionSending;
+    public bool CommsResetPositionSending
+    {
+        get => _commsResetPositionSending;
+        set { _commsResetPositionSending = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanResetPosition)); }
+    }
+
+    public bool CommsCanResetPosition => !CommsResetPositionSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && !string.IsNullOrEmpty(CommsSelectedUnitId) && IsLoggedIn;
+
     /// <summary>Status types matching WebUI Comms (backend STATUS_MESSAGE_TYPES).</summary>
     public static readonly IReadOnlyList<(string Type, string Label)> CommsStatusTypes = new List<(string, string)>
     {
@@ -423,6 +432,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         finally
         {
             CommsStatusSending = false;
+        }
+    }
+
+    public async Task ResetCommsUnitPositionAsync()
+    {
+        if (!CommsCanResetPosition || string.IsNullOrEmpty(CommsSelectedMissionId) || string.IsNullOrEmpty(CommsSelectedUnitId)) return;
+        CommsResetPositionSending = true;
+        CommsStatusMessage = "";
+        try
+        {
+            var endpoint = ResolveServerEndpoint();
+            var baseUrl = endpoint.Scheme == "http"
+                ? $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}"
+                : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
+            using var client = new BackendClient(baseUrl, AdminToken ?? "");
+            client.SetAuthToken(AuthToken ?? "");
+            var (ok, error) = await client.ResetUnitPositionAsync(CommsSelectedMissionId, CommsSelectedUnitId);
+            CommsStatusMessage = ok ? "Location reset to origin." : (error ?? "Reset failed.");
+        }
+        catch (Exception ex)
+        {
+            CommsStatusMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            CommsResetPositionSending = false;
         }
     }
 

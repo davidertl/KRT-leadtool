@@ -559,6 +559,38 @@ public sealed class BackendClient : IDisposable
         }
     }
 
+    /// <summary>POST /api/companion/units/reset-position — reset unit position to origin. Requires Bearer token. Returns true on success.</summary>
+    public async Task<(bool Ok, string? Error)> ResetUnitPositionAsync(string missionId, string unitId)
+    {
+        try
+        {
+            var payload = new { mission_id = missionId, unit_id = unitId };
+            var json = JsonSerializer.Serialize(payload);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "api/companion/units/reset-position")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            if (resp.IsSuccessStatusCode) return (true, null);
+            var body = await resp.Content.ReadAsStringAsync();
+            string? err = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("error", out var errProp))
+                    err = errProp.GetString();
+            }
+            catch { }
+            return (false, err ?? $"HTTP {(int)resp.StatusCode}");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
     /// <summary>POST /api/companion/status — submit status (Comms). unitId null = use primary unit. Requires Bearer token.</summary>
     public async Task<bool> SendCompanionStatusAsync(string missionId, string? unitId, string messageType, string? message = null)
     {

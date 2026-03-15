@@ -20,6 +20,7 @@ const { requireMissionMember, canEditUnit, getUnitAccessContext } = require('../
 const { normalizeMissionSettings, isCompanionStatusSyncEnabled } = require('../services/missionSettings');
 const { STATUS_MESSAGE_TYPES, applyStatusMessage } = require('../services/statusUpdates');
 const { validate } = require('../validation/middleware');
+const { broadcastToMission } = require('../socket');
 
 const MESSAGE_TYPES = [
   'checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom', 'under_attack',
@@ -31,6 +32,11 @@ const companionStatusSchema = z.object({
   unit_id: z.string().uuid().optional().nullable(),
   message_type: z.enum(MESSAGE_TYPES),
   message: z.string().max(500).optional().nullable(),
+});
+
+const companionResetPositionSchema = z.object({
+  mission_id: z.string().uuid(),
+  unit_id: z.string().uuid(),
 });
 
 function getCompanionRedirectUri(req) {
@@ -255,9 +261,30 @@ router.post('/status', requireCompanionAuth(['status']), validate(companionStatu
       return res.status(409).json({ error: 'Companion status sync is currently disabled for this mission' });
     }
 
-    const resolvedUnitId = unit_id || mission.primary_unit_id || null;
+    let resolvedUnitId = unit_id || mission.primary_unit_id || null;
+
+    // On first status use: create a person unit for this user and set as primary
     if (STATUS_MESSAGE_TYPES.has(message_type) && !resolvedUnitId) {
-      return res.status(400).json({ error: 'No reporting unit is bound for this companion session' });
+      const createResult = await query(
+        `INSERT INTO units (name, unit_type, owner_id, mission_id, discord_id, status, pos_x, pos_y, pos_z, heading)
+         VALUES ($1, 'person', $2, $3, $4, $5, 0, 0, 0, 0)
+         RETURNING *`,
+        [
+          req.user.username || 'Companion',
+          req.user.id,
+          mission_id,
+          req.user.discord_id || null,
+          message_type,
+        ]
+      );
+      const newPerson = createResult.rows[0];
+      await query(
+        `UPDATE mission_members SET primary_unit_id = $1 WHERE mission_id = $2 AND user_id = $3`,
+        [newPerson.id, mission_id, req.user.id]
+      );
+      broadcastToMission(mission_id, 'unit:created', newPerson);
+      broadcastToMission(mission_id, 'member:updated', { primary_unit_id: newPerson.id });
+      resolvedUnitId = newPerson.id;
     }
 
     const response = await applyStatusMessage({
@@ -273,6 +300,32 @@ router.post('/status', requireCompanionAuth(['status']), validate(companionStatu
     });
 
     res.status(201).json(response);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Reset unit position to origin (pos 0, heading 0). Allowed for gesamtlead; gruppenlead/teamlead for their scope.
+router.post('/units/reset-position', requireCompanionAuth(['companion']), validate(companionResetPositionSchema), requireMissionMember, async (req, res, next) => {
+  try {
+    const { mission_id, unit_id } = req.body;
+    const unitAccess = await getUnitAccessContext(unit_id);
+    if (!unitAccess || unitAccess.mission_id !== mission_id) {
+      return res.status(404).json({ error: 'Unit not found in this mission' });
+    }
+    const canEdit = await canEditUnit(req, unitAccess);
+    if (!canEdit) {
+      return res.status(403).json({ error: 'Insufficient permissions to reset this unit\'s location' });
+    }
+    const result = await query(
+      `UPDATE units SET pos_x = 0, pos_y = 0, pos_z = 0, heading = 0 WHERE id = $1 RETURNING *`,
+      [unit_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Unit not found' });
+    }
+    broadcastToMission(mission_id, 'unit:updated', result.rows[0]);
+    res.json(result.rows[0]);
   } catch (error) {
     next(error);
   }

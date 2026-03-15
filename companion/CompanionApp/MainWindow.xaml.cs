@@ -299,4 +299,9 @@ public partial class MainWindow : Window
             await _vm.SendCommsStatusAsync(messageType);
         }
     }
+
+    private async void CommsResetLocation_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.ResetCommsUnitPositionAsync();
+    }
 }
