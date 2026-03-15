@@ -247,11 +247,10 @@ export default function UnitMarker({ unit, group, isSelected, onDragStart, onDra
       <Html
         position={[0, -(markerSize + 8), 0]}
         center
-        distanceFactor={500}
         zIndexRange={[10, 0]}
         style={{ pointerEvents: 'none' }}
       >
-        <div className="text-[10px] text-center whitespace-nowrap" style={{ color }}>
+        <div className="text-[11px] text-center whitespace-nowrap font-medium" style={{ color, textShadow: '0 0 4px rgba(0,0,0,0.9)' }}>
           {callsignLabel}{unit.name}
         </div>
       </Html>

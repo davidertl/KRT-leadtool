@@ -101,8 +101,8 @@ router.get('/', requireAuth, requireMissionMember, async (req, res, next) => {
 
     // Fetch bookmarks
     const bookmarks = await query(
-      `SELECT * FROM bookmarks WHERE mission_id = $1 AND (is_shared = true OR user_id = $3)`,
-      [mission_id, sinceDate, req.user.id]
+      `SELECT * FROM bookmarks WHERE mission_id = $1 AND (is_shared = true OR user_id = $2)`,
+      [mission_id, req.user.id]
     );
 
     res.json({
