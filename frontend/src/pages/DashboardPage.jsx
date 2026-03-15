@@ -27,17 +27,24 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!newMissionName.trim()) return;
 
-    const res = await fetch('/api/missions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ name: newMissionName.trim() }),
-    });
+    try {
+      const res = await fetch('/api/missions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name: newMissionName.trim() }),
+      });
 
-    if (res.ok) {
-      const mission = await res.json();
-      setMissions((prev) => [mission, ...prev]);
-      setNewMissionName('');
+      if (res.ok) {
+        const mission = await res.json();
+        setMissions((prev) => [mission, ...prev]);
+        setNewMissionName('');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to create mission');
+      }
+    } catch {
+      toast.error('Network error');
     }
   };
 

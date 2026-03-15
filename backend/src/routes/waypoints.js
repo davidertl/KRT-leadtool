@@ -9,21 +9,36 @@ const { broadcastToMission } = require('../socket');
 const { validate } = require('../validation/middleware');
 const { schemas } = require('../validation/schemas');
 
-// List waypoints for a unit
+// List waypoints for a unit or mission
 router.get('/', requireAuth, async (req, res, next) => {
   try {
-    const { unit_id } = req.query;
-    if (!unit_id) return res.status(400).json({ error: 'unit_id query parameter required' });
+    const { unit_id, mission_id } = req.query;
 
-    const result = await query(
-      `SELECT w.*, u.mission_id
-       FROM waypoints w
-       JOIN units u ON u.id = w.unit_id
-       WHERE w.unit_id = $1
-       ORDER BY w.sequence ASC`,
-      [unit_id]
-    );
-    res.json(result.rows);
+    if (unit_id) {
+      const result = await query(
+        `SELECT w.*, u.mission_id
+         FROM waypoints w
+         JOIN units u ON u.id = w.unit_id
+         WHERE w.unit_id = $1
+         ORDER BY w.sequence ASC`,
+        [unit_id]
+      );
+      return res.json(result.rows);
+    }
+
+    if (mission_id) {
+      const result = await query(
+        `SELECT w.*, u.mission_id
+         FROM waypoints w
+         JOIN units u ON u.id = w.unit_id
+         WHERE u.mission_id = $1
+         ORDER BY w.unit_id, w.sequence ASC`,
+        [mission_id]
+      );
+      return res.json(result.rows);
+    }
+
+    return res.status(400).json({ error: 'unit_id or mission_id query parameter required' });
   } catch (err) { next(err); }
 });
 

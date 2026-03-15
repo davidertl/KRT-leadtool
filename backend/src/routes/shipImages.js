@@ -45,7 +45,7 @@ router.get('/names', requireAuth, async (req, res, next) => {
     const cached = await valkey.get(cacheKey).catch(() => null);
     if (cached) return res.json(JSON.parse(cached));
 
-    let sql = `SELECT ship_type, display_name, manufacturer, vehicle_category, crew_max, cargo_capacity, size_category FROM ship_images`;
+    let sql = `SELECT ship_type, display_name, manufacturer, vehicle_category, crew_max, cargo_capacity, size_class AS size_category FROM ship_images`;
     const params = [];
     if (category) {
       sql += ` WHERE vehicle_category = $1`;
@@ -123,7 +123,7 @@ router.get('/lookup/:shipType', requireAuth, async (req, res, next) => {
       // Cache in database
       const result = await query(
         `INSERT INTO ship_images (ship_type, display_name, image_url, thumbnail_url, vehicle_category, manufacturer,
-           crew_max, fuel_capacity, cargo_capacity, hull_hp, size_category,
+           crew_max, fuel_capacity, cargo_capacity, hull_hp, size_class,
            source, source_url, license, license_url, author)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'sc_wiki', $12, 'CC-BY-NC-SA 4.0', 'https://creativecommons.org/licenses/by-nc-sa/4.0/', $13)
          ON CONFLICT (ship_type) DO UPDATE SET
@@ -136,7 +136,7 @@ router.get('/lookup/:shipType', requireAuth, async (req, res, next) => {
            fuel_capacity = EXCLUDED.fuel_capacity,
            cargo_capacity = EXCLUDED.cargo_capacity,
            hull_hp = EXCLUDED.hull_hp,
-           size_category = EXCLUDED.size_category,
+           size_class = EXCLUDED.size_class,
            source_url = EXCLUDED.source_url,
            author = EXCLUDED.author
          RETURNING *`,
@@ -181,7 +181,7 @@ router.post('/', requireAuth, async (req, res, next) => {
 
     const result = await query(
       `INSERT INTO ship_images (ship_type, display_name, image_url, thumbnail_url, vehicle_category, manufacturer,
-         crew_max, fuel_capacity, cargo_capacity, hull_hp, size_category,
+         crew_max, fuel_capacity, cargo_capacity, hull_hp, size_class,
          source, source_url, license, license_url, author)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (ship_type) DO UPDATE SET
@@ -194,7 +194,7 @@ router.post('/', requireAuth, async (req, res, next) => {
          fuel_capacity = EXCLUDED.fuel_capacity,
          cargo_capacity = EXCLUDED.cargo_capacity,
          hull_hp = EXCLUDED.hull_hp,
-         size_category = EXCLUDED.size_category,
+         size_class = EXCLUDED.size_class,
          source = EXCLUDED.source,
          source_url = EXCLUDED.source_url,
          license = EXCLUDED.license,
@@ -269,7 +269,7 @@ router.post('/sync-all', requireAuth, async (req, res, next) => {
 
         await query(
           `INSERT INTO ship_images (ship_type, display_name, image_url, thumbnail_url, vehicle_category, manufacturer,
-             crew_max, fuel_capacity, cargo_capacity, hull_hp, size_category,
+             crew_max, fuel_capacity, cargo_capacity, hull_hp, size_class,
              source, source_url, license, license_url, author)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'sc_wiki', $12, 'CC-BY-NC-SA 4.0', 'https://creativecommons.org/licenses/by-nc-sa/4.0/', 'Star Citizen Wiki Community')
            ON CONFLICT (ship_type) DO UPDATE SET
@@ -282,7 +282,7 @@ router.post('/sync-all', requireAuth, async (req, res, next) => {
              fuel_capacity = EXCLUDED.fuel_capacity,
              cargo_capacity = EXCLUDED.cargo_capacity,
              hull_hp = EXCLUDED.hull_hp,
-             size_category = EXCLUDED.size_category`,
+             size_class = EXCLUDED.size_class`,
           [
             vehicle.name,
             stats.displayName,
