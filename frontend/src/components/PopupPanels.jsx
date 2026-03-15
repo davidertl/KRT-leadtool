@@ -994,9 +994,9 @@ function MultiplayerPopup({ missionId }) {
 
 /* ─── PersonListItem ───────────────── */
 function PersonListItem({ person, group, isSelected }) {
-  const { toggleSelectUnit, focusUnit } = useMissionStore();
+  const { toggleSelectUnit, focusUnit, units } = useMissionStore();
   const { openPersonDetail } = usePopupStore();
-  const parentShip = person.parent_unit_id ? useMissionStore.getState().units.find((u) => u.id === person.parent_unit_id) : null;
+  const parentShip = person.parent_unit_id ? units.find((u) => u.id === person.parent_unit_id) : null;
 
   return (
     <div

@@ -174,12 +174,25 @@ function SceneContents() {
  * Main 3D space map component using React Three Fiber
  */
 export default function SpaceMap() {
+  const { units, navData } = useMissionStore();
+  const isLoading = units.length === 0 && (!navData.bodies || navData.bodies.length === 0);
+
   return (
-    <Canvas
-      camera={{ position: [0, 5000, 15000], fov: 60, near: 0.1, far: 500000 }}
-      style={{ background: '#0a0e1a', position: 'relative', zIndex: 0 }}
-    >
-      <SceneContents />
-    </Canvas>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-krt-accent mx-auto mb-2" />
+            <p className="text-gray-500 text-sm">Loading map data…</p>
+          </div>
+        </div>
+      )}
+      <Canvas
+        camera={{ position: [0, 5000, 15000], fov: 60, near: 0.1, far: 500000 }}
+        style={{ background: '#0a0e1a', position: 'relative', zIndex: 0 }}
+      >
+        <SceneContents />
+      </Canvas>
+    </div>
   );
 }

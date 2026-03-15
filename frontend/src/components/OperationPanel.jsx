@@ -374,6 +374,8 @@ function ActiveOperation({ op, missionId }) {
         const err = await res.json().catch(() => null);
         throw new Error(err?.error || `HTTP ${res.status}`);
       }
+      const updated = await res.json();
+      useMissionStore.getState().updateOperation(updated);
     } catch (e) {
       toast.error(`Failed to update operation: ${e.message}`);
     }

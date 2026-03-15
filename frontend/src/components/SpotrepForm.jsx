@@ -143,10 +143,14 @@ export default function SpotrepForm({ missionId, onClose, contact: editContact }
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // In edit mode, use relative position if a ref was chosen, otherwise keep direct position
     let pos;
     if (refId && selectedRef) {
-      pos = computeRelativePosition(selectedRef, bearing, distanceKm, elevation);
+      const relPos = computeRelativePosition(selectedRef, bearing, distanceKm, elevation);
+      if (selectedRef.category === 'unit') {
+        pos = relPos;
+      } else {
+        pos = { x: relPos.x * MAP_SCALE, y: relPos.y * MAP_SCALE, z: relPos.z * MAP_SCALE };
+      }
     } else if (isEdit && directPos) {
       pos = directPos;
     } else {

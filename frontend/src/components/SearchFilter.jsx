@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMissionStore } from '../stores/missionStore';
-import { STATUS_OPTIONS } from '../lib/constants';
+import { STATUS_OPTIONS, STATUS_LABELS } from '../lib/constants';
 
 export default function SearchFilter() {
   const { searchQuery, statusFilter, setSearchQuery, setStatusFilter, toggleStatusFilter } = useMissionStore();
@@ -53,7 +53,7 @@ export default function SearchFilter() {
                 : 'bg-krt-bg text-gray-400 hover:text-white'
             }`}
           >
-            {s}
+            {STATUS_LABELS[s] || s}
           </button>
         ))}
       </div>

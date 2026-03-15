@@ -17,6 +17,18 @@ export const STATUS_OPTIONS = [
   'disabled',
 ];
 
+export const STATUS_LABELS = {
+  boarding: 'Boarding',
+  ready_for_takeoff: 'Ready for Takeoff',
+  on_the_way: 'On the Way',
+  arrived: 'Arrived',
+  ready_for_orders: 'Ready for Orders',
+  in_combat: 'In Combat',
+  heading_home: 'Heading Home',
+  damaged: 'Damaged',
+  disabled: 'Disabled',
+};
+
 export const STATUS_COLORS = {
   boarding: '#a855f7',
   ready_for_takeoff: '#3b82f6',

@@ -46,6 +46,11 @@ export default function QuickMessages({ missionId }) {
 
   const [selectedUnit, setSelectedUnit] = useState('');
 
+  const selectableUnits = useMemo(() => {
+    if (recipientType !== 'system') return units;
+    return units.filter((unit) => canUpdateStatusForUnit(unit));
+  }, [recipientType, units, canUpdateStatusForUnit]);
+
   /* Set default unit to user's person when units first load */
   useEffect(() => {
     if (userPersonId && !selectedUnit) setSelectedUnit(userPersonId);
@@ -58,11 +63,6 @@ export default function QuickMessages({ missionId }) {
   }, [recipientType, selectableUnits, selectedUnit]);
 
   const selectedUnitRecord = units.find((unit) => unit.id === selectedUnit);
-
-  const selectableUnits = useMemo(() => {
-    if (recipientType !== 'system') return units;
-    return units.filter((unit) => canUpdateStatusForUnit(unit));
-  }, [recipientType, units, canUpdateStatusForUnit]);
 
   /* Units grouped under their group for the selector */
   const groupedUnits = useMemo(() => {
