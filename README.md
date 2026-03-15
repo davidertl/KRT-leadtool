@@ -140,6 +140,23 @@ docker volume rm krt-leadtool_postgres-data
 docker compose up -d
 ```
 
+## Troubleshooting
+
+### Backend fails: "password authentication failed for user krt_user" (28P01)
+
+PostgreSQL only sets `krt_user`’s password when the data directory is first created. If you changed `POSTGRES_PASSWORD` in `.env` after the first run, or the volume was created with a different password, the backend will get 28P01.
+
+**Fix (choose one):**
+
+1. **Recreate the database** (data loss): use [Database reset](#database-reset) above, then set `POSTGRES_PASSWORD` in `.env` to the value you want and run `docker compose up -d` again.
+2. **Keep existing data**: connect to Postgres and set the password to match `.env`:
+   ```bash
+   docker exec -it krt-postgres psql -U krt_user -d krt_leadtool -c "ALTER USER krt_user PASSWORD 'YOUR_CURRENT_POSTGRES_PASSWORD_FROM_ENV';"
+   ```
+   Then restart the backend: `docker compose restart backend`.
+
+Ensure `.env` exists (copy from `example.env`) and that `POSTGRES_PASSWORD` is set before the first `docker compose up` so backend and Postgres use the same value.
+
 ## Main API groups
 
 Mounted route groups in backend include:

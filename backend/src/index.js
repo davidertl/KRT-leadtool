@@ -16,6 +16,38 @@ const { getJwtSecret } = require('./auth/jwt');
 const { createVoiceModule } = require('./modules/voice');
 
 const PORT = process.env.APP_PORT || 3000;
+const STARTUP_RETRY_ATTEMPTS = parseInt(process.env.STARTUP_RETRY_ATTEMPTS || '10', 10);
+const STARTUP_RETRY_DELAY_MS = parseInt(process.env.STARTUP_RETRY_DELAY_MS || '3000', 10);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryStartupStep(label, operation) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= STARTUP_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      if (attempt > 1) {
+        console.log(`[KRT] Retrying ${label} (${attempt}/${STARTUP_RETRY_ATTEMPTS})...`);
+      }
+      await operation();
+      return;
+    } catch (error) {
+      lastError = error;
+      const isLastAttempt = attempt === STARTUP_RETRY_ATTEMPTS;
+      console.error(
+        `[KRT] ${label} failed (${attempt}/${STARTUP_RETRY_ATTEMPTS}): ${error.message}`
+      );
+      if (isLastAttempt) {
+        break;
+      }
+      await sleep(STARTUP_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError;
+}
 
 async function start() {
   getJwtSecret();
@@ -26,9 +58,9 @@ async function start() {
   const enabledModules = getEnabledModules();
 
   // Test database connections
-  await testDB();
-  await testValkey();
-  await ensureSchema();
+  await retryStartupStep('PostgreSQL connection', testDB);
+  await retryStartupStep('Valkey connection', testValkey);
+  await retryStartupStep('PostgreSQL schema check', ensureSchema);
 
   // Seed navigation data (idempotent — safe on every startup)
   if (enabledModules.includes('leadtool')) {
