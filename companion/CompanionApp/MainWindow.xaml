@@ -471,6 +471,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
           <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
@@ -479,45 +480,49 @@
             <Button Content="Refresh" Margin="12,0,0,0" Padding="8,4" 
                     Click="CommsRefresh_Click"/>
           </StackPanel>
-          <StackPanel Grid.Row="1" Margin="0,0,0,8">
-            <TextBlock Text="Mission" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
-            <ComboBox ItemsSource="{Binding CommsMissions}" 
-                      DisplayMemberPath="Name" SelectedValuePath="Id"
-                      SelectedValue="{Binding CommsSelectedMissionId, UpdateSourceTrigger=PropertyChanged}"
-                      MinHeight="28" Padding="6,4"/>
+          <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+            <StackPanel>
+              <TextBlock Text="Mission" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+              <ComboBox ItemsSource="{Binding CommsMissions}" 
+                        DisplayMemberPath="Name" SelectedValuePath="Id"
+                        SelectedValue="{Binding CommsSelectedMissionId, UpdateSourceTrigger=PropertyChanged}"
+                        MinHeight="28" MinWidth="200" Padding="6,4"/>
+            </StackPanel>
+            <Button Content="Assign" Margin="12,0,0,0" Padding="10,6" VerticalAlignment="Bottom"
+                    IsEnabled="{Binding CommsCanAssign}" Click="CommsAssign_Click"/>
           </StackPanel>
           <StackPanel Grid.Row="2" Margin="0,0,0,8">
-            <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-              </Grid.ColumnDefinitions>
-              <StackPanel Grid.Column="0">
-                <TextBlock Text="Report for unit" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
-                <ComboBox ItemsSource="{Binding CommsReportableUnits}" SelectedValuePath="Id"
-                          SelectedValue="{Binding CommsSelectedUnitId, UpdateSourceTrigger=PropertyChanged}"
-                          MinHeight="28" Padding="6,4">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock>
-                        <TextBlock.Text>
-                          <MultiBinding StringFormat="{}{0} ({1})">
-                            <Binding Path="Callsign" FallbackValue=""/>
-                            <Binding Path="Name" FallbackValue="?"/>
-                          </MultiBinding>
-                        </TextBlock.Text>
-                      </TextBlock>
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-              </StackPanel>
-              <Button Grid.Column="1" Content="Reset location" Margin="12,0,0,0" Padding="10,6" VerticalAlignment="Bottom"
-                      IsEnabled="{Binding CommsCanResetPosition}" Click="CommsResetLocation_Click"/>
-            </Grid>
+            <TextBlock Text="Report for unit" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+            <ComboBox ItemsSource="{Binding CommsReportableUnits}" SelectedValuePath="Id"
+                      SelectedValue="{Binding CommsSelectedUnitId, UpdateSourceTrigger=PropertyChanged}"
+                      MinHeight="28" Padding="6,4">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock>
+                    <TextBlock.Text>
+                      <MultiBinding StringFormat="{}{0} ({1})">
+                        <Binding Path="Callsign" FallbackValue=""/>
+                        <Binding Path="Name" FallbackValue="?"/>
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
           </StackPanel>
-          <TextBlock Grid.Row="3" Text="{Binding CommsRoleLabel}" Foreground="{StaticResource TextSecondary}" 
+          <StackPanel Grid.Row="3" Margin="0,0,0,8">
+            <TextBlock Text="Board ship" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+            <StackPanel Orientation="Horizontal">
+              <ComboBox MinWidth="220" MinHeight="28" Padding="6,4"
+                        ItemsSource="{Binding CommsBoardChoices}" SelectedValuePath="Id" DisplayMemberPath="Display"
+                        SelectedValue="{Binding CommsSelectedShipId, UpdateSourceTrigger=PropertyChanged}"/>
+              <Button Content="Board / Unboard" Margin="12,0,0,0" Padding="10,6" VerticalAlignment="Center"
+                      IsEnabled="{Binding CommsCanBoard}" Click="CommsBoard_Click"/>
+            </StackPanel>
+          </StackPanel>
+          <TextBlock Grid.Row="4" Text="{Binding CommsRoleLabel}" Foreground="{StaticResource TextSecondary}" 
                      FontSize="11" Margin="0,0,0,12"/>
-          <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
+          <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto">
             <StackPanel>
               <TextBlock Text="Set status for the selected unit (policy: person only, or teamlead/grouplead for assigned units)." 
                          Foreground="{StaticResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
@@ -530,15 +535,63 @@
                   </ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                      <Button Content="{Binding Item2}" Margin="0,0,8,8" Padding="10,6"
+                      <Button Content="{Binding Label}" Margin="0,0,8,8" Padding="10,6"
                               IsEnabled="{Binding DataContext.CommsCanSend, RelativeSource={RelativeSource AncestorType=Window}}"
-                              Click="CommsStatusButton_Click" Tag="{Binding Item1}"/>
+                              Click="CommsStatusButton_Click" Tag="{Binding Type}"/>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
               </WrapPanel>
               <TextBlock Text="{Binding CommsStatusMessage}" Foreground="{StaticResource TextSecondary}" 
                          Margin="0,12,0,0" FontSize="12" TextWrapping="Wrap"/>
+
+              <TextBlock Text="Location (person/unit/ship by role)" Foreground="{StaticResource TextPrimary}" 
+                         FontSize="12" FontWeight="SemiBold" Margin="0,24,0,8"/>
+              <TextBlock Text="Set or reset position for the selected unit. Permissions: gesamtlead all; gruppenlead/teamlead for their scope." 
+                         Foreground="{StaticResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <StackPanel>
+                  <TextBlock Text="Unit" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+                  <ComboBox ItemsSource="{Binding CommsReportableUnits}" SelectedValuePath="Id"
+                            SelectedValue="{Binding CommsLocationUnitId, UpdateSourceTrigger=PropertyChanged}"
+                            MinHeight="28" MinWidth="220" Padding="6,4">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock>
+                          <TextBlock.Text>
+                            <MultiBinding StringFormat="{}{0} ({1})">
+                              <Binding Path="Callsign" FallbackValue=""/>
+                              <Binding Path="Name" FallbackValue="?"/>
+                            </MultiBinding>
+                          </TextBlock.Text>
+                        </TextBlock>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+                <Button Content="Reset to origin" Margin="12,0,0,0" Padding="10,6" VerticalAlignment="Bottom"
+                        IsEnabled="{Binding CommsCanResetPosition}" Click="CommsResetLocation_Click"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <StackPanel Margin="0,0,12,0">
+                  <TextBlock Text="X" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+                  <TextBox Text="{Binding CommsLocationX, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" Width="70" Padding="6,4"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,12,0">
+                  <TextBlock Text="Y" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+                  <TextBox Text="{Binding CommsLocationY, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" Width="70" Padding="6,4"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,12,0">
+                  <TextBlock Text="Z" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+                  <TextBox Text="{Binding CommsLocationZ, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" Width="70" Padding="6,4"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,12,0">
+                  <TextBlock Text="Heading" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+                  <TextBox Text="{Binding CommsLocationHeading, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" Width="70" Padding="6,4"/>
+                </StackPanel>
+                <Button Content="Set location" Margin="0,0,0,0" Padding="10,6" VerticalAlignment="Bottom"
+                        IsEnabled="{Binding CommsCanSetPosition}" Click="CommsSetLocation_Click"/>
+              </StackPanel>
             </StackPanel>
           </ScrollViewer>
         </Grid>

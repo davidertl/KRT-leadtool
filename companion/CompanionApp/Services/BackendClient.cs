@@ -539,6 +539,142 @@ public sealed class BackendClient : IDisposable
         }
     }
 
+    /// <summary>POST /api/companion/assign — create person in mission and set as primary (idempotent). Returns success and optional unit.</summary>
+    public async Task<(bool Ok, string? Error, CompanionUnitInfo? Unit)> AssignToMissionAsync(string missionId)
+    {
+        try
+        {
+            var payload = new { mission_id = missionId };
+            var json = JsonSerializer.Serialize(payload);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "api/companion/assign")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            var body = await resp.Content.ReadAsStringAsync();
+            if (resp.IsSuccessStatusCode)
+            {
+                var unit = JsonSerializer.Deserialize<CompanionUnitInfo>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return (true, null, unit);
+            }
+            string? err = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("error", out var errProp))
+                    err = errProp.GetString();
+            }
+            catch { }
+            return (false, err ?? $"HTTP {(int)resp.StatusCode}", null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message, null);
+        }
+    }
+
+    /// <summary>POST /api/companion/units/board — set primary person's ship (null = unboard). Requires Bearer token.</summary>
+    public async Task<(bool Ok, string? Error)> BoardShipAsync(string missionId, string? shipId)
+    {
+        try
+        {
+            var payload = new Dictionary<string, object?> { ["mission_id"] = missionId };
+            if (shipId != null) payload["ship_id"] = shipId;
+            var json = JsonSerializer.Serialize(payload);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "api/companion/units/board")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            if (resp.IsSuccessStatusCode) return (true, null);
+            var body = await resp.Content.ReadAsStringAsync();
+            string? err = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("error", out var errProp))
+                    err = errProp.GetString();
+            }
+            catch { }
+            return (false, err ?? $"HTTP {(int)resp.StatusCode}");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    /// <summary>POST /api/companion/units/set-position — set unit position. Requires Bearer token.</summary>
+    public async Task<(bool Ok, string? Error)> SetUnitPositionAsync(string missionId, string unitId, double posX, double posY, double posZ, double? heading = null)
+    {
+        try
+        {
+            var payload = new Dictionary<string, object>
+            {
+                ["mission_id"] = missionId,
+                ["unit_id"] = unitId,
+                ["pos_x"] = posX,
+                ["pos_y"] = posY,
+                ["pos_z"] = posZ,
+            };
+            if (heading.HasValue) payload["heading"] = heading.Value;
+            var json = JsonSerializer.Serialize(payload);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "api/companion/units/set-position")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            if (resp.IsSuccessStatusCode) return (true, null);
+            var body = await resp.Content.ReadAsStringAsync();
+            string? err = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("error", out var errProp))
+                    err = errProp.GetString();
+            }
+            catch { }
+            return (false, err ?? $"HTTP {(int)resp.StatusCode}");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    /// <summary>GET /api/companion/status-types — status types with labels for Comms buttons. Requires Bearer token.</summary>
+    public async Task<List<(string Type, string Label)>?> GetCompanionStatusTypesAsync()
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "api/companion/status-types");
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+            var body = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            var list = new List<(string, string)>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                var type = item.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "";
+                var label = item.TryGetProperty("label", out var l) ? l.GetString() ?? type : type;
+                list.Add((type, label));
+            }
+            return list;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>GET /api/companion/bootstrap?mission_id= — mission details and reportable units. Requires Bearer token.</summary>
     public async Task<CompanionBootstrapResponse?> GetCompanionBootstrapAsync(string missionId)
     {

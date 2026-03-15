@@ -44,9 +44,13 @@ All URLs below are relative to the voice host base (e.g. `https://voice.yourdoma
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/companion/me` | Current user and mission list. |
+| GET | `/api/companion/status-types` | Status types with labels for Comms buttons (array of `{ type, label }`). |
 | GET | `/api/companion/bootstrap?mission_id=...` | Mission details, units, reportable_units. |
+| POST | `/api/companion/assign` | Create person in mission and set as primary (body: mission_id). Idempotent: returns existing primary unit if already assigned. |
 | POST | `/api/companion/status` | Submit status message (mission_id, unit_id, message_type, message). If no primary unit, a person is auto-created and set as primary. |
+| POST | `/api/companion/units/board` | Set primary person’s ship (body: mission_id, ship_id optional). ship_id null/omitted = unboard. Ship must be unit_type ship/ground_vehicle; canEditShip applies. |
 | POST | `/api/companion/units/reset-position` | Reset unit position to origin (body: mission_id, unit_id). Gesamtlead: all; gruppenlead/teamlead: scope. |
+| POST | `/api/companion/units/set-position` | Set unit position (body: mission_id, unit_id, pos_x, pos_y, pos_z, heading optional). Same auth/canEditUnit as reset-position. |
 | POST | `/api/companion/auth/revoke` | Revoke current companion session. |
 | POST | `/api/companion/auth/accept-policy` | Accept privacy policy. |
 | POST | `/api/voice/tx-event` | Body: `freqId`, `action` (start/stop), optional `radioSlot`, `metadata`. Response includes `listener_count`. |

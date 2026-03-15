@@ -16,11 +16,24 @@ const {
   revokeCompanionSession,
   upsertDiscordUser,
 } = require('../auth/companion');
-const { requireMissionMember, canEditUnit, getUnitAccessContext } = require('../auth/teamAuth');
+const { requireMissionMember, canEditUnit, canEditShip, getUnitAccessContext } = require('../auth/teamAuth');
 const { normalizeMissionSettings, isCompanionStatusSyncEnabled } = require('../services/missionSettings');
 const { STATUS_MESSAGE_TYPES, applyStatusMessage } = require('../services/statusUpdates');
 const { validate } = require('../validation/middleware');
 const { broadcastToMission } = require('../socket');
+
+// Display labels for Comms status buttons (single source of truth for WebUI and Companion).
+const STATUS_TYPE_LABELS = {
+  boarding: 'Boarding',
+  ready_for_takeoff: 'Ready for Takeoff',
+  on_the_way: 'On the Way',
+  arrived: 'Arrived',
+  ready_for_orders: 'Ready for Orders',
+  in_combat: 'In Combat',
+  heading_home: 'Heading Home',
+  damaged: 'Damaged',
+  disabled: 'Disabled',
+};
 
 const MESSAGE_TYPES = [
   'checkin', 'checkout', 'contact', 'rtb', 'winchester', 'bingo', 'hold', 'status', 'custom', 'under_attack',
@@ -37,6 +50,24 @@ const companionStatusSchema = z.object({
 const companionResetPositionSchema = z.object({
   mission_id: z.string().uuid(),
   unit_id: z.string().uuid(),
+});
+
+const companionAssignSchema = z.object({
+  mission_id: z.string().uuid(),
+});
+
+const companionBoardSchema = z.object({
+  mission_id: z.string().uuid(),
+  ship_id: z.string().uuid().optional().nullable(),
+});
+
+const companionSetPositionSchema = z.object({
+  mission_id: z.string().uuid(),
+  unit_id: z.string().uuid(),
+  pos_x: z.number().finite(),
+  pos_y: z.number().finite(),
+  pos_z: z.number().finite(),
+  heading: z.number().finite().optional().nullable(),
 });
 
 function getCompanionRedirectUri(req) {
@@ -189,6 +220,15 @@ router.post('/auth/accept-policy', requireCompanionAuth(['companion']), async (_
   res.json({ accepted: true, version: '1.0' });
 });
 
+// Status types for Comms (type + label). No mission required; used by Companion to show status buttons.
+router.get('/status-types', requireCompanionAuth(['companion']), (_req, res) => {
+  const types = Array.from(STATUS_MESSAGE_TYPES).map((type) => ({
+    type,
+    label: STATUS_TYPE_LABELS[type] || type,
+  }));
+  res.json(types);
+});
+
 router.get('/bootstrap', requireCompanionAuth(['companion']), requireMissionMember, async (req, res, next) => {
   try {
     const missionId = req.query.mission_id;
@@ -235,6 +275,46 @@ router.get('/bootstrap', requireCompanionAuth(['companion']), requireMissionMemb
       units: unitsResult.rows,
       reportable_units: reportableUnits,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Create a person in the mission with user's name and set as primary (idempotent if already assigned).
+router.post('/assign', requireCompanionAuth(['companion']), validate(companionAssignSchema), requireMissionMember, async (req, res, next) => {
+  try {
+    const { mission_id } = req.body;
+    const memberResult = await query(
+      `SELECT primary_unit_id FROM mission_members WHERE mission_id = $1 AND user_id = $2`,
+      [mission_id, req.user.id]
+    );
+    const member = memberResult.rows[0];
+    if (!member) {
+      return res.status(404).json({ error: 'Mission not found' });
+    }
+    if (member.primary_unit_id) {
+      const unitRow = await query('SELECT * FROM units WHERE id = $1', [member.primary_unit_id]);
+      return res.status(200).json(unitRow.rows[0] || { id: member.primary_unit_id });
+    }
+    const createResult = await query(
+      `INSERT INTO units (name, unit_type, owner_id, mission_id, discord_id, status, pos_x, pos_y, pos_z, heading)
+       VALUES ($1, 'person', $2, $3, $4, 'disabled', 0, 0, 0, 0)
+       RETURNING *`,
+      [
+        req.user.username || 'Companion',
+        req.user.id,
+        mission_id,
+        req.user.discord_id || null,
+      ]
+    );
+    const newPerson = createResult.rows[0];
+    await query(
+      `UPDATE mission_members SET primary_unit_id = $1 WHERE mission_id = $2 AND user_id = $3`,
+      [newPerson.id, mission_id, req.user.id]
+    );
+    broadcastToMission(mission_id, 'unit:created', newPerson);
+    broadcastToMission(mission_id, 'member:updated', { primary_unit_id: newPerson.id });
+    res.status(201).json(newPerson);
   } catch (error) {
     next(error);
   }
@@ -320,6 +400,81 @@ router.post('/units/reset-position', requireCompanionAuth(['companion']), valida
     const result = await query(
       `UPDATE units SET pos_x = 0, pos_y = 0, pos_z = 0, heading = 0 WHERE id = $1 RETURNING *`,
       [unit_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Unit not found' });
+    }
+    broadcastToMission(mission_id, 'unit:updated', result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Board: set primary person's parent_unit_id to ship (or null to unboard). Ship must be in mission and user must have canEditShip.
+router.post('/units/board', requireCompanionAuth(['companion']), validate(companionBoardSchema), requireMissionMember, async (req, res, next) => {
+  try {
+    const { mission_id, ship_id } = req.body;
+    const memberResult = await query(
+      `SELECT primary_unit_id FROM mission_members WHERE mission_id = $1 AND user_id = $2`,
+      [mission_id, req.user.id]
+    );
+    const member = memberResult.rows[0];
+    if (!member || !member.primary_unit_id) {
+      return res.status(400).json({ error: 'No person assigned in this mission. Use Assign first.' });
+    }
+    const personResult = await query(
+      `SELECT id, unit_type, mission_id FROM units WHERE id = $1`,
+      [member.primary_unit_id]
+    );
+    const person = personResult.rows[0];
+    if (!person || person.unit_type !== 'person') {
+      return res.status(400).json({ error: 'Primary unit is not a person' });
+    }
+    if (ship_id) {
+      const shipResult = await query(
+        `SELECT id, mission_id, unit_type FROM units WHERE id = $1`,
+        [ship_id]
+      );
+      const ship = shipResult.rows[0];
+      if (!ship || ship.mission_id !== mission_id) {
+        return res.status(404).json({ error: 'Ship not found in this mission' });
+      }
+      if (ship.unit_type !== 'ship' && ship.unit_type !== 'ground_vehicle') {
+        return res.status(400).json({ error: 'Target unit is not a ship or ground vehicle' });
+      }
+      const canBoard = await canEditShip(req, ship_id);
+      if (!canBoard) {
+        return res.status(403).json({ error: 'Insufficient permissions to board this ship' });
+      }
+    }
+    const result = await query(
+      `UPDATE units SET parent_unit_id = $1 WHERE id = $2 RETURNING *`,
+      [ship_id || null, person.id]
+    );
+    broadcastToMission(mission_id, 'unit:updated', result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Set unit position (custom coordinates). Same permission as reset-position.
+router.post('/units/set-position', requireCompanionAuth(['companion']), validate(companionSetPositionSchema), requireMissionMember, async (req, res, next) => {
+  try {
+    const { mission_id, unit_id, pos_x, pos_y, pos_z, heading } = req.body;
+    const unitAccess = await getUnitAccessContext(unit_id);
+    if (!unitAccess || unitAccess.mission_id !== mission_id) {
+      return res.status(404).json({ error: 'Unit not found in this mission' });
+    }
+    const canEdit = await canEditUnit(req, unitAccess);
+    if (!canEdit) {
+      return res.status(403).json({ error: 'Insufficient permissions to set this unit\'s location' });
+    }
+    const headingVal = heading != null ? heading : null;
+    const result = await query(
+      `UPDATE units SET pos_x = $1, pos_y = $2, pos_z = $3, heading = COALESCE($4, heading) WHERE id = $5 RETURNING *`,
+      [pos_x, pos_y, pos_z, headingVal, unit_id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Unit not found' });

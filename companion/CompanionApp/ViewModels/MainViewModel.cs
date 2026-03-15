@@ -16,6 +16,20 @@ using CompanionApp.Services;
 
 namespace CompanionApp.ViewModels;
 
+/// <summary>Item for Board ship dropdown: null Id = Unboard.</summary>
+public sealed class BoardChoice
+{
+    public string? Id { get; set; }
+    public string Display { get; set; } = "";
+}
+
+/// <summary>Status type for Comms buttons (from backend or default).</summary>
+public sealed class StatusTypeItem
+{
+    public string Type { get; set; } = "";
+    public string Label { get; set; } = "";
+}
+
 public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     public const string AppVersion = "Alpha 0.0.10";
@@ -284,11 +298,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public string? CommsSelectedMissionId
     {
         get => _commsSelectedMissionId;
-        set { _commsSelectedMissionId = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanSend)); _ = LoadCommsBootstrapAsync(); }
+        set { _commsSelectedMissionId = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanSend)); OnPropertyChanged(nameof(CommsCanAssign)); _ = LoadCommsBootstrapAsync(); }
     }
 
     /// <summary>Units the user can report status for (reportable_units from bootstrap).</summary>
     public ObservableCollection<CompanionUnitInfo> CommsReportableUnits { get; } = new();
+
+    /// <summary>Ships/ground vehicles in the selected mission (for Board ship).</summary>
+    public ObservableCollection<CompanionUnitInfo> CommsShips { get; } = new();
+
+    /// <summary>Board dropdown options: "— Unboard —" (Id=null) plus ships.</summary>
+    public ObservableCollection<BoardChoice> CommsBoardChoices { get; } = new();
+
+    private string? _commsPrimaryUnitId;
+    /// <summary>Primary unit id for this user in the selected mission (from bootstrap).</summary>
+    public string? CommsPrimaryUnitId
+    {
+        get => _commsPrimaryUnitId;
+        set { _commsPrimaryUnitId = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanBoard)); }
+    }
+
+    private string? _commsSelectedShipId;
+    /// <summary>Selected ship to board; null = Unboard.</summary>
+    public string? CommsSelectedShipId
+    {
+        get => _commsSelectedShipId;
+        set { _commsSelectedShipId = value; OnPropertyChanged(); }
+    }
 
     private string? _commsSelectedUnitId;
     /// <summary>Selected unit to report for; null = use primary/self.</summary>
@@ -323,6 +359,43 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool CommsCanSend => !CommsStatusSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && IsLoggedIn;
 
+    public bool CommsCanAssign => !string.IsNullOrEmpty(CommsSelectedMissionId) && IsLoggedIn;
+
+    private bool _commsBoardSending;
+    public bool CommsBoardSending
+    {
+        get => _commsBoardSending;
+        set { _commsBoardSending = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanBoard)); }
+    }
+
+    public bool CommsCanBoard => !CommsBoardSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && !string.IsNullOrEmpty(CommsPrimaryUnitId) && IsLoggedIn;
+
+    private string? _commsLocationUnitId;
+    /// <summary>Unit to set/reset location for (Location section).</summary>
+    public string? CommsLocationUnitId
+    {
+        get => _commsLocationUnitId;
+        set { _commsLocationUnitId = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanResetPosition)); OnPropertyChanged(nameof(CommsCanSetPosition)); }
+    }
+
+    private string _commsLocationX = "";
+    public string CommsLocationX { get => _commsLocationX; set { _commsLocationX = value ?? ""; OnPropertyChanged(); } }
+    private string _commsLocationY = "";
+    public string CommsLocationY { get => _commsLocationY; set { _commsLocationY = value ?? ""; OnPropertyChanged(); } }
+    private string _commsLocationZ = "";
+    public string CommsLocationZ { get => _commsLocationZ; set { _commsLocationZ = value ?? ""; OnPropertyChanged(); } }
+    private string _commsLocationHeading = "";
+    public string CommsLocationHeading { get => _commsLocationHeading; set { _commsLocationHeading = value ?? ""; OnPropertyChanged(); } }
+
+    private bool _commsSetPositionSending;
+    public bool CommsSetPositionSending
+    {
+        get => _commsSetPositionSending;
+        set { _commsSetPositionSending = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanSetPosition)); }
+    }
+
+    public bool CommsCanSetPosition => !CommsSetPositionSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && !string.IsNullOrEmpty(CommsLocationUnitId) && IsLoggedIn;
+
     private bool _commsResetPositionSending;
     public bool CommsResetPositionSending
     {
@@ -330,10 +403,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         set { _commsResetPositionSending = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanResetPosition)); }
     }
 
-    public bool CommsCanResetPosition => !CommsResetPositionSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && !string.IsNullOrEmpty(CommsSelectedUnitId) && IsLoggedIn;
+    public bool CommsCanResetPosition => !CommsResetPositionSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && !string.IsNullOrEmpty(CommsLocationUnitId) && IsLoggedIn;
 
-    /// <summary>Status types matching WebUI Comms (backend STATUS_MESSAGE_TYPES).</summary>
-    public static readonly IReadOnlyList<(string Type, string Label)> CommsStatusTypes = new List<(string, string)>
+    /// <summary>Status types for Comms buttons (fetched from backend or default).</summary>
+    public ObservableCollection<StatusTypeItem> CommsStatusTypes { get; } = new();
+
+    private static readonly IReadOnlyList<(string Type, string Label)> DefaultCommsStatusTypes = new List<(string, string)>
     {
         ("boarding", "Boarding"),
         ("ready_for_takeoff", "Ready for Takeoff"),
@@ -347,7 +422,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     };
 
     /// <summary>Instance binding for Comms status buttons.</summary>
-    public IReadOnlyList<(string Type, string Label)> CommsStatusButtonList => CommsStatusTypes;
+    public ObservableCollection<StatusTypeItem> CommsStatusButtonList => CommsStatusTypes;
 
     public async Task LoadCommsMissionsAsync()
     {
@@ -367,6 +442,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 CommsMissions.Add(m);
             if (CommsMissions.Count > 0 && string.IsNullOrEmpty(CommsSelectedMissionId))
                 CommsSelectedMissionId = CommsMissions[0].Id;
+            var statusTypes = await client.GetCompanionStatusTypesAsync();
+            if (statusTypes != null && statusTypes.Count > 0)
+            {
+                CommsStatusTypes.Clear();
+                foreach (var (type, label) in statusTypes)
+                    CommsStatusTypes.Add(new StatusTypeItem { Type = type, Label = label });
+            }
         }
         catch (Exception ex)
         {
@@ -390,7 +472,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CommsReportableUnits.Clear();
             foreach (var u in bootstrap.ReportableUnits ?? new List<CompanionUnitInfo>())
                 CommsReportableUnits.Add(u);
+            CommsShips.Clear();
+            CommsBoardChoices.Clear();
+            CommsBoardChoices.Add(new BoardChoice { Id = null, Display = "— Unboard —" });
+            foreach (var u in bootstrap.Units ?? new List<CompanionUnitInfo>())
+            {
+                var t = u.UnitType ?? "";
+                if (t.Equals("ship", StringComparison.OrdinalIgnoreCase) || t.Equals("ground_vehicle", StringComparison.OrdinalIgnoreCase))
+                {
+                    CommsShips.Add(u);
+                    CommsBoardChoices.Add(new BoardChoice { Id = u.Id, Display = $"{u.Callsign ?? ""} ({u.Name ?? "?"})" });
+                }
+            }
+            CommsPrimaryUnitId = bootstrap.Mission?.PrimaryUnitId;
             CommsMissionRole = bootstrap.Mission?.MissionRole ?? "";
+            if (CommsReportableUnits.Count > 0 && string.IsNullOrEmpty(CommsLocationUnitId))
+            {
+                var primary = bootstrap.Mission?.PrimaryUnitId;
+                if (!string.IsNullOrEmpty(primary) && CommsReportableUnits.Any(u => u.Id == primary))
+                    CommsLocationUnitId = primary;
+                else
+                    CommsLocationUnitId = CommsReportableUnits[0].Id;
+            }
             if (CommsReportableUnits.Count > 0 && string.IsNullOrEmpty(CommsSelectedUnitId) && !string.IsNullOrEmpty(bootstrap.Mission?.PrimaryUnitId))
             {
                 var primary = bootstrap.Mission.PrimaryUnitId;
@@ -406,6 +509,62 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         catch (Exception ex)
         {
             CommsStatusMessage = $"Load failed: {ex.Message}";
+        }
+    }
+
+    public async Task AssignCommsMissionAsync()
+    {
+        if (!CommsCanAssign || string.IsNullOrEmpty(CommsSelectedMissionId)) return;
+        CommsStatusMessage = "";
+        var endpoint = ResolveServerEndpoint();
+        var baseUrl = endpoint.Scheme == "http"
+            ? $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}"
+            : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
+        try
+        {
+            using var client = new BackendClient(baseUrl, AdminToken ?? "");
+            client.SetAuthToken(AuthToken ?? "");
+            var (ok, error, _) = await client.AssignToMissionAsync(CommsSelectedMissionId);
+            if (ok)
+                CommsStatusMessage = "Assigned.";
+            else if (!string.IsNullOrEmpty(error) && error.Contains("404"))
+                CommsStatusMessage = "Assign failed (404). Use the voice/server URL and ensure the server has the voice module enabled (APP_MODULES).";
+            else
+                CommsStatusMessage = error ?? "Assign failed.";
+            if (ok)
+                await LoadCommsBootstrapAsync();
+        }
+        catch (Exception ex)
+        {
+            CommsStatusMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    public async Task BoardShipAsync()
+    {
+        if (!CommsCanBoard || string.IsNullOrEmpty(CommsSelectedMissionId)) return;
+        CommsBoardSending = true;
+        CommsStatusMessage = "";
+        try
+        {
+            var endpoint = ResolveServerEndpoint();
+            var baseUrl = endpoint.Scheme == "http"
+                ? $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}"
+                : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
+            using var client = new BackendClient(baseUrl, AdminToken ?? "");
+            client.SetAuthToken(AuthToken ?? "");
+            var (ok, error) = await client.BoardShipAsync(CommsSelectedMissionId, CommsSelectedShipId);
+            CommsStatusMessage = ok ? (CommsSelectedShipId == null ? "Unboarded." : "Boarded.") : (error ?? "Board failed.");
+            if (ok)
+                await LoadCommsBootstrapAsync();
+        }
+        catch (Exception ex)
+        {
+            CommsStatusMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            CommsBoardSending = false;
         }
     }
 
@@ -437,7 +596,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task ResetCommsUnitPositionAsync()
     {
-        if (!CommsCanResetPosition || string.IsNullOrEmpty(CommsSelectedMissionId) || string.IsNullOrEmpty(CommsSelectedUnitId)) return;
+        if (!CommsCanResetPosition || string.IsNullOrEmpty(CommsSelectedMissionId) || string.IsNullOrEmpty(CommsLocationUnitId)) return;
         CommsResetPositionSending = true;
         CommsStatusMessage = "";
         try
@@ -448,7 +607,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
             using var client = new BackendClient(baseUrl, AdminToken ?? "");
             client.SetAuthToken(AuthToken ?? "");
-            var (ok, error) = await client.ResetUnitPositionAsync(CommsSelectedMissionId, CommsSelectedUnitId);
+            var (ok, error) = await client.ResetUnitPositionAsync(CommsSelectedMissionId, CommsLocationUnitId);
             CommsStatusMessage = ok ? "Location reset to origin." : (error ?? "Reset failed.");
         }
         catch (Exception ex)
@@ -458,6 +617,40 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         finally
         {
             CommsResetPositionSending = false;
+        }
+    }
+
+    public async Task SetCommsUnitPositionAsync()
+    {
+        if (!CommsCanSetPosition || string.IsNullOrEmpty(CommsSelectedMissionId) || string.IsNullOrEmpty(CommsLocationUnitId)) return;
+        if (!double.TryParse(CommsLocationX, out var x) || !double.TryParse(CommsLocationY, out var y) || !double.TryParse(CommsLocationZ, out var z))
+        {
+            CommsStatusMessage = "Enter valid X, Y, Z numbers.";
+            return;
+        }
+        double? heading = null;
+        if (!string.IsNullOrWhiteSpace(CommsLocationHeading) && double.TryParse(CommsLocationHeading, out var h))
+            heading = h;
+        CommsSetPositionSending = true;
+        CommsStatusMessage = "";
+        try
+        {
+            var endpoint = ResolveServerEndpoint();
+            var baseUrl = endpoint.Scheme == "http"
+                ? $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}"
+                : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
+            using var client = new BackendClient(baseUrl, AdminToken ?? "");
+            client.SetAuthToken(AuthToken ?? "");
+            var (ok, error) = await client.SetUnitPositionAsync(CommsSelectedMissionId, CommsLocationUnitId, x, y, z, heading);
+            CommsStatusMessage = ok ? "Location set." : (error ?? "Set position failed.");
+        }
+        catch (Exception ex)
+        {
+            CommsStatusMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            CommsSetPositionSending = false;
         }
     }
 
@@ -985,6 +1178,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             panel.PropertyChanged += OnRadioPanelPropertyChanged;
             RadioPanels.Add(panel);
         }
+
+        // Default Comms status types (replaced when fetched from backend)
+        foreach (var (type, label) in DefaultCommsStatusTypes)
+            CommsStatusTypes.Add(new StatusTypeItem { Type = type, Label = label });
 
         // Set up emergency radio
         EmergencyRadio.UnsavedChangesOccurred += MarkGlobalChanged;

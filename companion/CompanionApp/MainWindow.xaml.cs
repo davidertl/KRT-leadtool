@@ -292,6 +292,16 @@ public partial class MainWindow : Window
         await _vm.LoadCommsMissionsAsync();
     }
 
+    private async void CommsAssign_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.AssignCommsMissionAsync();
+    }
+
+    private async void CommsBoard_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.BoardShipAsync();
+    }
+
     private async void CommsStatusButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is string messageType)
@@ -303,5 +313,10 @@ public partial class MainWindow : Window
     private async void CommsResetLocation_Click(object sender, RoutedEventArgs e)
     {
         await _vm.ResetCommsUnitPositionAsync();
+    }
+
+    private async void CommsSetLocation_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.SetCommsUnitPositionAsync();
     }
 }
