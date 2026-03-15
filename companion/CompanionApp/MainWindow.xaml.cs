@@ -75,10 +75,15 @@ public partial class MainWindow : Window
     private string _originalHotkeyValue = "";
     private DateTime _lastTabChange = DateTime.MinValue;
     
-    private void TabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    private async void TabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         // Track when tabs change to prevent auto-focus on hotkey fields
         _lastTabChange = DateTime.Now;
+        // Auto-load Comms missions when opening Comms tab
+        if (e.AddedItems?.Count > 0 && e.AddedItems[0] == CommsTab)
+        {
+            await _vm.LoadCommsMissionsAsync();
+        }
     }
 
     private void HotkeyTextBox_GotFocus(object sender, RoutedEventArgs e)
@@ -279,6 +284,19 @@ public partial class MainWindow : Window
         if (sender is System.Windows.Controls.CheckBox cb && cb.DataContext is CompanionApp.Services.AudioSessionInfo session)
         {
             _vm.ToggleDuckedProcess(session.ProcessName);
+        }
+    }
+
+    private async void CommsRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.LoadCommsMissionsAsync();
+    }
+
+    private async void CommsStatusButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string messageType)
+        {
+            await _vm.SendCommsStatusAsync(messageType);
         }
     }
 }

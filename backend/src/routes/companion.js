@@ -214,6 +214,12 @@ router.get('/bootstrap', requireCompanionAuth(['companion']), requireMissionMemb
         reportableUnits.push(unit);
       }
     }
+    // Ensure user can always report for self (primary unit) when set
+    const primaryId = mission.primary_unit_id;
+    if (primaryId && !reportableUnits.some((u) => u.id === primaryId)) {
+      const primaryUnit = unitsResult.rows.find((u) => u.id === primaryId);
+      if (primaryUnit) reportableUnits.push(primaryUnit);
+    }
 
     res.json({
       mission: {

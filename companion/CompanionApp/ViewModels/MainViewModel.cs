@@ -275,6 +275,159 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     #endregion
 
+    #region Comms (Status)
+
+    /// <summary>Missions the user can report status for (from /api/companion/me).</summary>
+    public ObservableCollection<CompanionMissionInfo> CommsMissions { get; } = new();
+
+    private string? _commsSelectedMissionId;
+    public string? CommsSelectedMissionId
+    {
+        get => _commsSelectedMissionId;
+        set { _commsSelectedMissionId = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanSend)); _ = LoadCommsBootstrapAsync(); }
+    }
+
+    /// <summary>Units the user can report status for (reportable_units from bootstrap).</summary>
+    public ObservableCollection<CompanionUnitInfo> CommsReportableUnits { get; } = new();
+
+    private string? _commsSelectedUnitId;
+    /// <summary>Selected unit to report for; null = use primary/self.</summary>
+    public string? CommsSelectedUnitId
+    {
+        get => _commsSelectedUnitId;
+        set { _commsSelectedUnitId = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanSend)); }
+    }
+
+    private string _commsMissionRole = "";
+    public string CommsMissionRole
+    {
+        get => _commsMissionRole;
+        set { _commsMissionRole = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsRoleLabel)); }
+    }
+
+    public string CommsRoleLabel => string.IsNullOrEmpty(CommsMissionRole) ? "" : $"Role: {CommsMissionRole}";
+
+    private bool _commsStatusSending;
+    public bool CommsStatusSending
+    {
+        get => _commsStatusSending;
+        set { _commsStatusSending = value; OnPropertyChanged(); OnPropertyChanged(nameof(CommsCanSend)); }
+    }
+
+    private string _commsStatusMessage = "";
+    public string CommsStatusMessage
+    {
+        get => _commsStatusMessage;
+        set { _commsStatusMessage = value; OnPropertyChanged(); }
+    }
+
+    public bool CommsCanSend => !CommsStatusSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && IsLoggedIn;
+
+    /// <summary>Status types matching WebUI Comms (backend STATUS_MESSAGE_TYPES).</summary>
+    public static readonly IReadOnlyList<(string Type, string Label)> CommsStatusTypes = new List<(string, string)>
+    {
+        ("boarding", "Boarding"),
+        ("ready_for_takeoff", "Ready for Takeoff"),
+        ("on_the_way", "On the Way"),
+        ("arrived", "Arrived"),
+        ("ready_for_orders", "Ready for Orders"),
+        ("in_combat", "In Combat"),
+        ("heading_home", "Heading Home"),
+        ("damaged", "Damaged"),
+        ("disabled", "Disabled"),
+    };
+
+    /// <summary>Instance binding for Comms status buttons.</summary>
+    public IReadOnlyList<(string Type, string Label)> CommsStatusButtonList => CommsStatusTypes;
+
+    public async Task LoadCommsMissionsAsync()
+    {
+        if (!IsLoggedIn || string.IsNullOrWhiteSpace(AuthToken)) return;
+        var endpoint = ResolveServerEndpoint();
+        var baseUrl = endpoint.Scheme == "http"
+            ? $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}"
+            : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
+        try
+        {
+            using var client = new BackendClient(baseUrl, AdminToken ?? "");
+            client.SetAuthToken(AuthToken ?? "");
+            var me = await client.GetCompanionMeAsync();
+            if (me?.Missions == null) return;
+            CommsMissions.Clear();
+            foreach (var m in me.Missions)
+                CommsMissions.Add(m);
+            if (CommsMissions.Count > 0 && string.IsNullOrEmpty(CommsSelectedMissionId))
+                CommsSelectedMissionId = CommsMissions[0].Id;
+        }
+        catch (Exception ex)
+        {
+            CommsStatusMessage = $"Load failed: {ex.Message}";
+        }
+    }
+
+    public async Task LoadCommsBootstrapAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CommsSelectedMissionId)) return;
+        var endpoint = ResolveServerEndpoint();
+        var baseUrl = endpoint.Scheme == "http"
+            ? $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}"
+            : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
+        try
+        {
+            using var client = new BackendClient(baseUrl, AdminToken ?? "");
+            client.SetAuthToken(AuthToken ?? "");
+            var bootstrap = await client.GetCompanionBootstrapAsync(CommsSelectedMissionId);
+            if (bootstrap == null) return;
+            CommsReportableUnits.Clear();
+            foreach (var u in bootstrap.ReportableUnits ?? new List<CompanionUnitInfo>())
+                CommsReportableUnits.Add(u);
+            CommsMissionRole = bootstrap.Mission?.MissionRole ?? "";
+            if (CommsReportableUnits.Count > 0 && string.IsNullOrEmpty(CommsSelectedUnitId) && !string.IsNullOrEmpty(bootstrap.Mission?.PrimaryUnitId))
+            {
+                var primary = bootstrap.Mission.PrimaryUnitId;
+                if (CommsReportableUnits.Any(u => u.Id == primary))
+                    CommsSelectedUnitId = primary;
+                else
+                    CommsSelectedUnitId = CommsReportableUnits[0].Id;
+            }
+            else if (CommsReportableUnits.Count > 0 && string.IsNullOrEmpty(CommsSelectedUnitId))
+                CommsSelectedUnitId = CommsReportableUnits[0].Id;
+            CommsStatusMessage = "";
+        }
+        catch (Exception ex)
+        {
+            CommsStatusMessage = $"Load failed: {ex.Message}";
+        }
+    }
+
+    public async Task SendCommsStatusAsync(string messageType)
+    {
+        if (!CommsCanSend || string.IsNullOrEmpty(CommsSelectedMissionId)) return;
+        CommsStatusSending = true;
+        CommsStatusMessage = "";
+        try
+        {
+            var endpoint = ResolveServerEndpoint();
+            var baseUrl = endpoint.Scheme == "http"
+                ? $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}"
+                : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
+            using var client = new BackendClient(baseUrl, AdminToken ?? "");
+            client.SetAuthToken(AuthToken ?? "");
+            var ok = await client.SendCompanionStatusAsync(CommsSelectedMissionId, CommsSelectedUnitId, messageType, null);
+            CommsStatusMessage = ok ? "Status sent." : "Send failed.";
+        }
+        catch (Exception ex)
+        {
+            CommsStatusMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            CommsStatusSending = false;
+        }
+    }
+
+    #endregion
+
     #region App Settings
 
     private bool _advancedMode;
@@ -1122,7 +1275,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 if (result.Status == "success" && !string.IsNullOrEmpty(result.Token))
                 {
                     AuthToken = result.Token;
-                    LoggedInDisplayName = result.DisplayName ?? "";
+                    LoggedInDisplayName = GetDisplayNameFromDiscordServerUsername(result.DisplayName);
 
                     // Accept policy on server if needed
                     if (!result.PolicyAccepted && !string.IsNullOrEmpty(AuthToken))
@@ -1187,6 +1340,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private static bool IsLoopbackHost(string host)
         => host is "127.0.0.1" or "localhost" or "::1";
+
+    /// <summary>
+    /// Extracts the in-game display name from Discord server username format
+    /// "ingameName | realName | SquadSign". Returns the part before the first " | ".
+    /// </summary>
+    private static string GetDisplayNameFromDiscordServerUsername(string? fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName)) return "";
+        var sep = " | ";
+        var idx = fullName.IndexOf(sep, StringComparison.Ordinal);
+        return idx >= 0 ? fullName[..idx].Trim() : fullName.Trim();
+    }
 
     private ServerEndpoint ResolveServerEndpoint()
     {
@@ -1467,7 +1632,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         VoicePort = config.VoicePort;
 
         AuthToken = config.AuthToken;
-        LoggedInDisplayName = config.LoggedInDisplayName;
+        LoggedInDisplayName = GetDisplayNameFromDiscordServerUsername(config.LoggedInDisplayName);
         _acceptedPolicyVersion = config.AcceptedPolicyVersion;
 
         AutoConnect = config.AutoConnect;
@@ -1860,6 +2025,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
             _backend?.Dispose();
             _backend = new BackendClient(BuildBaseUrl(), AdminToken);
+            _backend.SetAuthToken(AuthToken ?? "");
 
             _audio?.Dispose();
             _audio = new AudioCaptureService(SelectedAudioInputDevice);
@@ -2222,7 +2388,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
             if (action == "start")
             {
-                var timestamp = $"{DateTime.Now:HH:mm} - {username}";
+                var displayName = GetDisplayNameFromDiscordServerUsername(username);
+                var timestamp = $"{DateTime.Now:HH:mm} - {displayName}";
                 matchingRadio.AddTransmission(timestamp);
                 matchingRadio.SetReceiving(true);
 

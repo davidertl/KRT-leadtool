@@ -463,6 +463,77 @@
         </Grid>
       </TabItem>
 
+      <!-- Comms (Status) Tab -->
+      <TabItem x:Name="CommsTab" Header="Comms">
+        <Grid Margin="16">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Report status (WebUI Comms)" Foreground="{StaticResource TextPrimary}" 
+                       FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <Button Content="Refresh" Margin="12,0,0,0" Padding="8,4" 
+                    Click="CommsRefresh_Click"/>
+          </StackPanel>
+          <StackPanel Grid.Row="1" Margin="0,0,0,8">
+            <TextBlock Text="Mission" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+            <ComboBox ItemsSource="{Binding CommsMissions}" 
+                      DisplayMemberPath="Name" SelectedValuePath="Id"
+                      SelectedValue="{Binding CommsSelectedMissionId, UpdateSourceTrigger=PropertyChanged}"
+                      MinHeight="28" Padding="6,4"/>
+          </StackPanel>
+          <StackPanel Grid.Row="2" Margin="0,0,0,8">
+            <TextBlock Text="Report for unit" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+            <ComboBox ItemsSource="{Binding CommsReportableUnits}" SelectedValuePath="Id"
+                      SelectedValue="{Binding CommsSelectedUnitId, UpdateSourceTrigger=PropertyChanged}"
+                      MinHeight="28" Padding="6,4">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock>
+                    <TextBlock.Text>
+                      <MultiBinding StringFormat="{}{0} ({1})">
+                        <Binding Path="Callsign" FallbackValue=""/>
+                        <Binding Path="Name" FallbackValue="?"/>
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+          <TextBlock Grid.Row="3" Text="{Binding CommsRoleLabel}" Foreground="{StaticResource TextSecondary}" 
+                     FontSize="11" Margin="0,0,0,12"/>
+          <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <TextBlock Text="Set status for the selected unit (policy: person only, or teamlead/grouplead for assigned units)." 
+                         Foreground="{StaticResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+              <WrapPanel>
+                <ItemsControl ItemsSource="{Binding CommsStatusButtonList}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel/>
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Content="{Binding Item2}" Margin="0,0,8,8" Padding="10,6"
+                              IsEnabled="{Binding DataContext.CommsCanSend, RelativeSource={RelativeSource AncestorType=Window}}"
+                              Click="CommsStatusButton_Click" Tag="{Binding Item1}"/>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </WrapPanel>
+              <TextBlock Text="{Binding CommsStatusMessage}" Foreground="{StaticResource TextSecondary}" 
+                         Margin="0,12,0,0" FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+
       <!-- Keybinds Tab -->
       <TabItem Header="Keybinds">
         <ScrollViewer Margin="20">

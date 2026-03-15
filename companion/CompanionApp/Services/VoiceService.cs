@@ -254,7 +254,11 @@ public sealed class VoiceService : IDisposable
         catch (Exception ex)
         {
             Error(ex);
-            Status($"WebSocket connect failed: {ex.Message}");
+            var msg = ex.Message;
+            if (msg.Contains("200") && msg.Contains("101"))
+                Status("WebSocket connect failed: server returned HTTP 200 (expected 101). Use the voice host (e.g. voice.das-krt.com), not the main website URL.");
+            else
+                Status($"WebSocket connect failed: {msg}");
             return false;
         }
 

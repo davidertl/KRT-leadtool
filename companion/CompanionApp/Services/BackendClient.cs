@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace CompanionApp.Services;
@@ -59,6 +60,68 @@ public sealed class BackendFetchResult<T>
 {
     public T? Data { get; set; }
     public string? Error { get; set; }
+}
+
+/// <summary>Mission summary from GET /api/companion/me.</summary>
+public sealed class CompanionMissionInfo
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    [JsonPropertyName("mission_role")]
+    public string? MissionRole { get; set; }
+    [JsonPropertyName("primary_unit_id")]
+    public string? PrimaryUnitId { get; set; }
+}
+
+/// <summary>Response from GET /api/companion/me.</summary>
+public sealed class CompanionMeResponse
+{
+    public CompanionUserInfo? User { get; set; }
+    public List<CompanionMissionInfo> Missions { get; set; } = new();
+}
+
+public sealed class CompanionUserInfo
+{
+    public string Id { get; set; } = "";
+    public string Username { get; set; } = "";
+    [JsonPropertyName("discord_id")]
+    public string? DiscordId { get; set; }
+}
+
+/// <summary>Unit from bootstrap (reportable or all).</summary>
+public sealed class CompanionUnitInfo
+{
+    public string Id { get; set; } = "";
+    public string? Name { get; set; }
+    public string? Callsign { get; set; }
+    [JsonPropertyName("unit_type")]
+    public string? UnitType { get; set; }
+    [JsonPropertyName("parent_unit_id")]
+    public string? ParentUnitId { get; set; }
+    [JsonPropertyName("group_id")]
+    public string? GroupId { get; set; }
+    public string? Status { get; set; }
+    [JsonPropertyName("vhf_frequency")]
+    public int? VhfFrequency { get; set; }
+}
+
+/// <summary>Response from GET /api/companion/bootstrap?mission_id=.</summary>
+public sealed class CompanionBootstrapResponse
+{
+    public CompanionBootstrapMission? Mission { get; set; }
+    public List<CompanionUnitInfo> Units { get; set; } = new();
+    [JsonPropertyName("reportable_units")]
+    public List<CompanionUnitInfo> ReportableUnits { get; set; } = new();
+}
+
+public sealed class CompanionBootstrapMission
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    [JsonPropertyName("mission_role")]
+    public string? MissionRole { get; set; }
+    [JsonPropertyName("primary_unit_id")]
+    public string? PrimaryUnitId { get; set; }
 }
 
 public sealed class BackendClient : IDisposable
@@ -454,6 +517,74 @@ public sealed class BackendClient : IDisposable
         catch
         {
             return new Dictionary<int, string>();
+        }
+    }
+
+    /// <summary>GET /api/companion/me — current user and missions. Requires Bearer token.</summary>
+    public async Task<CompanionMeResponse?> GetCompanionMeAsync()
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "api/companion/me");
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+            var body = await resp.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<CompanionMeResponse>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>GET /api/companion/bootstrap?mission_id= — mission details and reportable units. Requires Bearer token.</summary>
+    public async Task<CompanionBootstrapResponse?> GetCompanionBootstrapAsync(string missionId)
+    {
+        try
+        {
+            var url = "api/companion/bootstrap?mission_id=" + Uri.EscapeDataString(missionId);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+            var body = await resp.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<CompanionBootstrapResponse>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>POST /api/companion/status — submit status (Comms). unitId null = use primary unit. Requires Bearer token.</summary>
+    public async Task<bool> SendCompanionStatusAsync(string missionId, string? unitId, string messageType, string? message = null)
+    {
+        try
+        {
+            var payload = new Dictionary<string, object?>
+            {
+                ["mission_id"] = missionId,
+                ["message_type"] = messageType,
+                ["message"] = message ?? ""
+            };
+            if (!string.IsNullOrEmpty(unitId))
+                payload["unit_id"] = unitId;
+            var json = JsonSerializer.Serialize(payload);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "api/companion/status")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
         }
     }
 
