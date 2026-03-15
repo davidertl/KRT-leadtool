@@ -1,25 +1,29 @@
 #!/bin/bash
 # =============================================================================
 # SSL Initialization Script for KRT-Leadtool
-# Requests a Let's Encrypt certificate via Certbot using webroot mode.
-# Nginx starts automatically with a self-signed cert, so this just replaces it.
+# Requests a Let's Encrypt certificate for the app root domain plus
+# the status and voice subdomains via Certbot webroot mode.
 #
-# Usage: ./scripts/init-ssl.sh lead.das-krt.com your@email.com
+# Usage: ./scripts/init-ssl.sh mydomain.com your@email.com [status.mydomain.com] [voice.mydomain.com]
 # =============================================================================
 
 set -e
 
 DOMAIN=${1:?Usage: $0 <domain> <email>}
 EMAIL=${2:?Usage: $0 <domain> <email>}
+STATUS_DOMAIN=${3:-status.${DOMAIN}}
+VOICE_DOMAIN=${4:-voice.${DOMAIN}}
 
 echo "=== KRT SSL Init ==="
-echo "Domain: $DOMAIN"
-echo "Email:  $EMAIL"
+echo "App host:    $DOMAIN"
+echo "Status host: $STATUS_DOMAIN"
+echo "Voice host:  $VOICE_DOMAIN"
+echo "Email:       $EMAIL"
 echo ""
 
 # Step 1: Ensure services are running (nginx needs to serve ACME challenges)
 echo "[1/3] Ensuring services are running..."
-docker compose up -d
+APP_MODULES="${APP_MODULES:-leadtool,voice}" docker compose --profile combined --profile ops up -d nginx
 
 # Wait for nginx to be ready
 echo "    Waiting for nginx..."
@@ -32,10 +36,12 @@ done
 
 # Step 2: Request certificate using webroot mode (nginx stays running)
 echo "[2/3] Requesting Let's Encrypt certificate..."
-docker compose run --rm certbot certonly \
+docker compose --profile combined run --rm certbot certonly \
   --webroot \
   -w /var/www/certbot \
   -d "$DOMAIN" \
+  -d "$STATUS_DOMAIN" \
+  -d "$VOICE_DOMAIN" \
   --email "$EMAIL" \
   --agree-tos \
   --no-eff-email \
@@ -47,6 +53,6 @@ docker exec krt-nginx nginx -s reload
 
 echo ""
 echo "=== Done! ==="
-echo "SSL certificate for $DOMAIN is now active."
+echo "SSL certificate for $DOMAIN, $STATUS_DOMAIN, and $VOICE_DOMAIN is now active."
 echo "The certbot container will auto-renew every 12 hours."
 echo "Visit: https://$DOMAIN"

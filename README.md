@@ -44,16 +44,24 @@ It provides a shared mission workspace with a 3D map, real-time updates, mission
 - Backend: Node.js 20, Express 4, Socket.IO 4
 - Data: PostgreSQL 16 + PostGIS, Valkey 8
 - Auth: Discord OAuth2 (Passport) + JWT cookie session
-- Infra: Docker Compose, Nginx reverse proxy, Certbot container
+- Infra: Docker Compose, Nginx reverse proxy, Certbot container, optional Uptime Kuma
 
 ## Installation (recommended: Docker Compose)
 
 ### 1) Prerequisites
 - Docker Engine + Docker Compose plugin
 - A Discord application (OAuth2 client)
-- A domain pointing to your server (for HTTPS)
+- A root domain plus DNS records for the required hosts:
+  - `yourdomain.com` for the WebUI and main OAuth flow
+  - `status.yourdomain.com` for Uptime Kuma
+  - `voice.yourdomain.com` for the voice/companion endpoints
 
-### 2) Clone and configure
+### 2) Deployment host layout
+- `https://yourdomain.com` serves the React WebUI, main REST API, Socket.IO, and Discord OAuth callback
+- `https://status.yourdomain.com` proxies Uptime Kuma
+- `https://voice.yourdomain.com` proxies `/api/voice`, `/api/companion`, legacy companion routes, and the `/voice` websocket
+
+### 3) Clone and configure
 ```bash
 git clone https://github.com/davidertl/KRT-leadtool.git
 cd KRT-leadtool
@@ -63,29 +71,45 @@ cp example.env .env
 Edit `.env` and set at minimum:
 - `APP_URL`
 - `DOMAIN`
+- `STATUS_DOMAIN`
+- `VOICE_DOMAIN`
 - `CERTBOT_EMAIL`
 - `DISCORD_CLIENT_ID`
 - `DISCORD_CLIENT_SECRET`
 - `DISCORD_CALLBACK_URL`
+- `COMPANION_DISCORD_CALLBACK_URL`
 - `JWT_SECRET`
 - `SESSION_SECRET`
 - `POSTGRES_PASSWORD`
 - `VALKEY_PASSWORD`
 
-### 3) Start stack
+Recommended production values:
+- `APP_URL=https://yourdomain.com`
+- `DOMAIN=yourdomain.com`
+- `STATUS_DOMAIN=status.yourdomain.com`
+- `VOICE_DOMAIN=voice.yourdomain.com`
+- `DISCORD_CALLBACK_URL=https://yourdomain.com/api/auth/discord/callback`
+- `COMPANION_DISCORD_CALLBACK_URL=https://voice.yourdomain.com/api/companion/auth/callback`
+
+### 4) Start stack
 ```bash
-docker compose up -d --build
+APP_MODULES=leadtool,voice docker compose --profile combined --profile ops up -d --build
 ```
 
-### 4) Verify
+If you do not want the voice module, use `APP_MODULES=leadtool` with `--profile leadtool --profile ops` instead.
+
+### 5) Verify
 ```bash
 docker compose ps
-curl -fsS http://localhost/api/health || curl -fsS http://localhost:3000/api/health
+curl -I https://yourdomain.com
+curl -I https://status.yourdomain.com
+curl -fsS http://localhost:3000/api/health
 ```
 
 Notes:
 - On first boot, PostgreSQL initializes schema and Stanton seed data from `postgres/init.sql` and `postgres/seed_stanton.sql`.
-- Nginx starts in HTTP-only mode if no certificate exists yet, then serves SSL mode after Certbot obtains certs and Nginx restarts.
+- Certbot requests a single certificate for `DOMAIN`, `STATUS_DOMAIN`, and `VOICE_DOMAIN`, then Nginx serves separate HTTPS virtual hosts for each hostname.
+- Nginx starts in HTTP-only mode if no matching certificate exists yet, then serves SSL mode after Certbot obtains the certificate set and Nginx restarts.
 
 ## Local development (without full Docker stack)
 

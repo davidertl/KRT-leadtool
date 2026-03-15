@@ -1,8 +1,8 @@
 # KRT-Leadtool Docker Compose Stack
 # Usage examples:
 # - Leadtool only: APP_MODULES=leadtool docker compose --profile leadtool up -d
-# - Voice only: APP_MODULES=voice docker compose up -d backend postgres valkey
-# - Combined: APP_MODULES=leadtool,voice docker compose --profile combined up -d
+# - Voice only (backend transport only): APP_MODULES=voice docker compose up -d backend postgres valkey
+# - App + Voice + Status: APP_MODULES=leadtool,voice docker compose --profile combined --profile ops up -d
 # Requires: .env file (copy from example.env)
 
 services:
@@ -21,6 +21,8 @@ services:
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN}
+      - STATUS_DOMAIN=${STATUS_DOMAIN}
+      - VOICE_DOMAIN=${VOICE_DOMAIN}
       - NGINX_ENVSUBST_TEMPLATE_DIR=/dev/null
     volumes:
       - ./nginx/docker-entrypoint.sh:/custom-entrypoint.sh:ro
@@ -239,12 +241,46 @@ services:
     container_name: krt-certbot
     environment:
       - DOMAIN=${DOMAIN}
+      - STATUS_DOMAIN=${STATUS_DOMAIN}
+      - VOICE_DOMAIN=${VOICE_DOMAIN}
       - CERTBOT_EMAIL=${CERTBOT_EMAIL}
     volumes:
       - certbot-webroot:/var/www/certbot
       - certbot-certs:/etc/letsencrypt
-    # On startup: obtain cert if missing/self-signed, then renew every 12h
-    entrypoint: /bin/sh -c 'trap exit TERM; CERT="/etc/letsencrypt/live/$${DOMAIN}/fullchain.pem"; NEED_CERT=0; if [ ! -f "$$CERT" ]; then NEED_CERT=1; elif openssl x509 -in "$$CERT" -issuer -noout 2>/dev/null | grep -q "CN = $${DOMAIN}"; then NEED_CERT=1; fi; if [ "$$NEED_CERT" = "1" ]; then echo "[KRT-Certbot] No real certificate found. Requesting from Lets Encrypt..."; sleep 15; certbot certonly --webroot -w /var/www/certbot -d $${DOMAIN} --email $${CERTBOT_EMAIL} --agree-tos --no-eff-email --non-interactive && echo "[KRT-Certbot] Certificate obtained!" || echo "[KRT-Certbot] Request failed (will retry on next restart)."; fi; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+    # On startup: obtain a SAN cert for app + subdomains if missing, then renew every 12h
+    entrypoint: >
+      /bin/sh -c '
+      trap exit TERM;
+      DOMAIN="${DOMAIN:?DOMAIN is required}";
+      STATUS_DOMAIN="${STATUS_DOMAIN:-status.$${DOMAIN}}";
+      VOICE_DOMAIN="${VOICE_DOMAIN:-voice.$${DOMAIN}}";
+      CERT="/etc/letsencrypt/live/$${DOMAIN}/fullchain.pem";
+      DOMAIN_ARGS="-d $${DOMAIN}";
+      for HOST in "$${STATUS_DOMAIN}" "$${VOICE_DOMAIN}"; do
+        if [ "$$HOST" != "$${DOMAIN}" ]; then
+          DOMAIN_ARGS="$$DOMAIN_ARGS -d $$HOST";
+        fi;
+      done;
+      certificate_covers_host() {
+        openssl x509 -in "$$CERT" -noout -checkhost "$$1" >/dev/null 2>&1;
+      };
+      NEED_CERT=0;
+      if [ ! -f "$$CERT" ]; then
+        NEED_CERT=1;
+      elif ! certificate_covers_host "$${DOMAIN}" || ! certificate_covers_host "$${STATUS_DOMAIN}" || ! certificate_covers_host "$${VOICE_DOMAIN}"; then
+        NEED_CERT=1;
+      fi;
+      if [ "$$NEED_CERT" = "1" ]; then
+        echo "[KRT-Certbot] No matching multi-host certificate found. Requesting from Lets Encrypt...";
+        sleep 15;
+        certbot certonly --webroot -w /var/www/certbot $$DOMAIN_ARGS --email $${CERTBOT_EMAIL} --agree-tos --no-eff-email --non-interactive &&
+        echo "[KRT-Certbot] Certificate obtained!" ||
+        echo "[KRT-Certbot] Request failed (will retry on next restart).";
+      fi;
+      while :; do
+        certbot renew --webroot -w /var/www/certbot --quiet;
+        sleep 12h & wait $${!};
+      done'
     depends_on:
       - nginx
     restart: unless-stopped

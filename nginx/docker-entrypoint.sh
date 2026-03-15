@@ -8,17 +8,31 @@
 # =============================================================================
 
 DOMAIN="${DOMAIN:-lead.das-krt.com}"
+STATUS_DOMAIN="${STATUS_DOMAIN:-status.${DOMAIN}}"
+VOICE_DOMAIN="${VOICE_DOMAIN:-voice.${DOMAIN}}"
 CERT_DIR="/etc/letsencrypt/live/${DOMAIN}"
 CERT_FILE="${CERT_DIR}/fullchain.pem"
 KEY_FILE="${CERT_DIR}/privkey.pem"
 CONF_TARGET="/etc/nginx/conf.d/default.conf"
 
-if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
+certificate_covers_host() {
+    HOST="$1"
+    if [ -z "$HOST" ]; then
+        return 1
+    fi
+
+    openssl x509 -in "$CERT_FILE" -noout -checkhost "$HOST" >/dev/null 2>&1
+}
+
+if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ] \
+    && certificate_covers_host "$DOMAIN" \
+    && certificate_covers_host "$STATUS_DOMAIN" \
+    && certificate_covers_host "$VOICE_DOMAIN"; then
     echo "[KRT-Nginx] SSL certificate found for ${DOMAIN}."
     echo "[KRT-Nginx] Starting in SSL mode (port 80 redirect + port 443)."
 
     # Render the SSL template with the actual domain via envsubst
-    envsubst '${DOMAIN}' < /etc/nginx/krt-templates/ssl.conf.template > "$CONF_TARGET"
+    envsubst '${DOMAIN} ${STATUS_DOMAIN} ${VOICE_DOMAIN}' < /etc/nginx/krt-templates/ssl.conf.template > "$CONF_TARGET"
 else
     echo "[KRT-Nginx] No SSL certificate found for ${DOMAIN}."
     echo "[KRT-Nginx] Starting in HTTP-only mode (port 80 — ACME challenges only)."
