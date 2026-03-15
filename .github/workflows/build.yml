@@ -1,6 +1,6 @@
 # ================================================
 # KRT-Leadtool CI/CD Pipeline
-# Build Docker images and push to GHCR
+# Build Docker images and push to GHCR; build Companion App and upload artifact
 # Watchtower on the server auto-pulls new images
 # ================================================
 
@@ -19,6 +19,35 @@ env:
   FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/krt-leadtool-frontend
 
 jobs:
+  build-companion:
+    name: Build Companion App
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore companion/CompanionApp.sln
+
+      - name: Build
+        run: dotnet build companion/CompanionApp.sln -c Release --no-restore
+
+      - name: Publish
+        run: dotnet publish companion/CompanionApp/CompanionApp.csproj -c Release -r win-x64 --self-contained false -o companion/publish
+
+      - name: Upload Companion artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: companion-app-win-x64
+          path: companion/publish
   build-backend:
     name: Build Backend
     runs-on: ubuntu-latest

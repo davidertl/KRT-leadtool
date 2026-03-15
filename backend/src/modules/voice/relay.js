@@ -265,7 +265,7 @@ function createVoiceRelay({ query, valkey }) {
       type: 'rx',
       freqId,
       action: payload.action,
-      discordUserId: payload.userId,
+      userId: payload.userId,
       username: payload.username,
     });
 

@@ -1,0 +1,16 @@
+# Build and IDE
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.cache
+*.log
+*.zip
+
+# NuGet
+packages/
+*.nupkg
+
+# Publish output
+publish/

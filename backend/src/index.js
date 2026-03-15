@@ -45,7 +45,6 @@ async function start() {
     });
     moduleInstances.push(voiceModule);
     routeRegistrations.push(voiceModule.routes());
-    routeRegistrations.push(voiceModule.compatibilityRoutes());
   }
 
   const app = createApp({

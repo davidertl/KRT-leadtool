@@ -4,7 +4,6 @@
 
 const { createVoiceRelay } = require('./relay');
 const { createVoiceRoutes } = require('./routes');
-const { createVoiceCompatibilityRoutes } = require('./compatibilityRoutes');
 
 function createVoiceModule({ query, valkey }) {
   const voiceRelay = createVoiceRelay({ query, valkey });
@@ -18,12 +17,6 @@ function createVoiceModule({ query, valkey }) {
       return {
         basePath: '/api/voice',
         router: createVoiceRoutes({ voiceRelay }),
-      };
-    },
-    compatibilityRoutes() {
-      return {
-        basePath: '/',
-        router: createVoiceCompatibilityRoutes({ voiceRelay }),
       };
     },
     handleUpgrade(pathname, req, socket, head) {

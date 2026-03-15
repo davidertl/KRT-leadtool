@@ -59,7 +59,7 @@ It provides a shared mission workspace with a 3D map, real-time updates, mission
 ### 2) Deployment host layout
 - `https://yourdomain.com` serves the React WebUI, main REST API, Socket.IO, and Discord OAuth callback
 - `https://status.yourdomain.com` proxies Uptime Kuma
-- `https://voice.yourdomain.com` proxies `/api/voice`, `/api/companion`, legacy companion routes, and the `/voice` websocket
+- `https://voice.yourdomain.com` proxies `/api/companion`, `/api/voice`, and the `/voice` WebSocket (used by the Companion App; see [docs/companion-api.md](docs/companion-api.md))
 
 ### 3) Clone and configure
 ```bash
@@ -164,14 +164,23 @@ Mounted route groups in backend include:
 - `/api/ship-images`
 - `/api/health`
 
+## Companion App
+
+This repo includes the **Companion App** (Windows WPF) in `companion/`. It connects to the **voice host** for Discord login, voice relay, and optional mission status updates. Voice is **end-to-end encrypted** (per-frequency AES-256-GCM); the server distributes keys over TLS and relays encrypted audio without decrypting it (same model as [KRT-Com_Discord](https://github.com/davidertl/KRT-Com_Discord)).
+
+- **Operators:** Deploy the backend with the voice module and set `VOICE_DOMAIN` and `COMPANION_DISCORD_CALLBACK_URL`. Register the companion callback in the Discord app (`https://<VOICE_DOMAIN>/api/companion/auth/callback`). See [docs/companion-api.md](docs/companion-api.md).
+- **End users:** Install the Companion App on Windows, then in settings enter the **voice host** URL (e.g. `https://voice.yourdomain.com`), not the main WebUI URL. Log in with Discord when prompted. Built artifacts are produced by CI (see Actions → workflow run → Artifacts: `companion-app-win-x64`), or build from source: see [companion/README.md](companion/README.md).
+
 ## Project structure
 
 ```text
 backend/     Express API, auth, routes, socket, DB adapters
+companion/   Companion App (WPF) source; connects to voice host
 frontend/    React app, map UI, stores, panels, offline cache
 nginx/       Reverse proxy templates and entrypoint
 postgres/    SQL init + seed data
 scripts/     Setup/backup helper scripts
+docs/        Companion API contract and operator docs
 localdoc/    Internal docs and audits
 ```
 

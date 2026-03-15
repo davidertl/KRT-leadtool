@@ -30,6 +30,7 @@ function createVoiceRoutes({ voiceRelay }) {
 
   router.post('/tx-event', requireCompanionAuth(['voice']), validate(txEventSchema), async (req, res, next) => {
     try {
+      const meta = req.body.metadata ?? req.body.meta ?? {};
       const result = await query(
         `INSERT INTO voice_tx_events (user_id, freq_id, radio_slot, action, source, metadata)
          VALUES ($1, $2, $3, $4, 'companion', $5)
@@ -39,7 +40,7 @@ function createVoiceRoutes({ voiceRelay }) {
           req.body.freqId,
           req.body.radioSlot ?? null,
           req.body.action,
-          JSON.stringify(req.body.metadata || {}),
+          JSON.stringify(meta),
         ]
       );
 
@@ -49,7 +50,7 @@ function createVoiceRoutes({ voiceRelay }) {
         action: req.body.action,
         userId: req.user.id,
         username: req.user.username,
-        metadata: req.body.metadata || {},
+        metadata: meta,
       };
 
       voiceRelay.notifyTxEvent(payload);
@@ -99,6 +100,14 @@ function createVoiceRoutes({ voiceRelay }) {
       freqId: req.body.freqId,
       listener_count: voiceRelay.getListenerCount(req.body.freqId),
     });
+  });
+
+  router.post('/frequencies/name', requireCompanionAuth(['voice']), (req, res) => {
+    res.json({ ok: true });
+  });
+
+  router.get('/frequencies/names', (_req, res) => {
+    res.json({ ok: true, data: {} });
   });
 
   router.get('/frequencies', requireCompanionAuth(['voice']), requireMissionMember, async (req, res, next) => {

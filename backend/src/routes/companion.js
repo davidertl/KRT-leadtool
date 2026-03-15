@@ -2,6 +2,7 @@
  * Companion App routes: native auth, bootstrap, and status sync.
  */
 
+const pkg = require('../../package.json');
 const router = require('express').Router();
 const { z } = require('zod');
 const { query } = require('../db/postgres');
@@ -36,6 +37,30 @@ function getCompanionRedirectUri(req) {
   return process.env.COMPANION_DISCORD_CALLBACK_URL
     || `${req.protocol}://${req.get('host')}/api/companion/auth/callback`;
 }
+
+router.get('/server-status', (_req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      version: pkg.version,
+      dsgvoEnabled: false,
+      debugMode: process.env.NODE_ENV !== 'production',
+      retentionDays: 0,
+      policyVersion: '1.0',
+      oauthEnabled: Boolean(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET),
+    },
+  });
+});
+
+router.get('/privacy-policy', (_req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      version: '1.0',
+      text: process.env.COMPANION_PRIVACY_POLICY_TEXT || 'Companion authentication uses Discord OAuth. Voice transport is relayed without storing audio content.',
+    },
+  });
+});
 
 router.get('/auth/discord', (req, res) => {
   const { state } = req.query;
@@ -89,29 +114,32 @@ router.get('/auth/callback', async (req, res) => {
 
 router.get('/auth/poll', (req, res) => {
   const { state } = req.query;
-  if (!state) return res.status(400).json({ error: 'state is required' });
+  if (!state) return res.status(400).json({ ok: false, error: 'state is required' });
 
   const pending = getPendingState(String(state));
   if (!pending) {
-    return res.json({ status: 'unknown' });
+    return res.json({ ok: true, data: { status: 'unknown' } });
   }
 
   if (pending.status === 'pending') {
-    return res.json({ status: 'pending' });
+    return res.json({ ok: true, data: { status: 'pending' } });
   }
 
   const result = consumePendingState(String(state));
   if (result.status === 'error') {
-    return res.json({ status: 'error', error: result.error || 'unknown_error' });
+    return res.json({ ok: true, data: { status: 'error', error: result.error || 'unknown_error' } });
   }
 
   return res.json({
-    status: 'success',
-    token: result.token,
-    session: result.session,
-    username: result.username,
-    policyVersion: '1.0',
-    policyAccepted: true,
+    ok: true,
+    data: {
+      status: 'success',
+      token: result.token,
+      session: result.session,
+      displayName: result.username,
+      policyVersion: '1.0',
+      policyAccepted: true,
+    },
   });
 });
 
