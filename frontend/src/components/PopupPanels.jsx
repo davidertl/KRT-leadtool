@@ -13,6 +13,7 @@ import QuickMessages from './QuickMessages';
 import BookmarkPanel from './BookmarkPanel';
 import MultiplayerPanel from './MultiplayerPanel';
 import RadioNetPanel from './RadioNetPanel';
+import BattleplanPanel from './BattleplanPanel';
 import toast from 'react-hot-toast';
 import { CLASS_TYPES, STATUS_OPTIONS, STATUS_COLORS, IFF_COLORS, PRIORITY_COLORS, PRIORITY_BADGE_COLORS, TASK_STATUS_OPTIONS } from '../lib/constants';
 
@@ -37,6 +38,7 @@ export default function PopupPanels() {
       <BookmarksPopup missionId={missionId} />
       <MultiplayerPopup missionId={missionId} />
       <RadioNetPopup missionId={missionId} />
+      <BattleplanPopup missionId={missionId} />
       <UnitDetailPopup />
       <PersonDetailPopup />
     </>
@@ -998,6 +1000,14 @@ function RadioNetPopup({ missionId }) {
   return (
     <PopupWindow id="radio">
       <RadioNetPanel missionId={missionId} />
+    </PopupWindow>
+  );
+}
+
+function BattleplanPopup({ missionId }) {
+  return (
+    <PopupWindow id="battleplan">
+      <BattleplanPanel missionId={missionId} />
     </PopupWindow>
   );
 }

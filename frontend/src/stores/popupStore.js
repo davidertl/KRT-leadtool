@@ -18,6 +18,7 @@ const POPUP_DEFAULTS = {
   bookmarks:    { x: 710, y: 60,  w: 320, h: 400, label: 'POI',           icon: '📌' },
   multiplayer:  { x: 710, y: 60,  w: 360, h: 520, label: 'Multiplayer',   icon: '🌐' },
   radio:        { x: 710, y: 60,  w: 360, h: 500, label: 'Radio Net',     icon: '📻' },
+  battleplan:   { x: 360, y: 60,  w: 420, h: 600, label: 'War Room',       icon: '⚔️' },
   unitDetail:   { x: 200, y: 100, w: 380, h: 560, label: 'Unit Detail',   icon: '🔍' },
   personDetail: { x: 200, y: 100, w: 360, h: 480, label: 'Person Detail', icon: '🧑' },
 };

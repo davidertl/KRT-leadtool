@@ -149,6 +149,14 @@ export function connectSocket(missionId) {
     useMissionStore.getState().updateMember(data);
   });
 
+  // Battle plan events
+  socket.on('battleplan:created', (plan) => useMissionStore.getState().addBattlePlan(plan));
+  socket.on('battleplan:updated', (plan) => useMissionStore.getState().updateBattlePlan(plan));
+  socket.on('battleplan:deleted', ({ id }) => useMissionStore.getState().removeBattlePlan(id));
+  socket.on('battleplan:vector_added', ({ plan_id, vector }) => useMissionStore.getState().addBattlePlanVector(plan_id, vector));
+  socket.on('battleplan:vector_updated', ({ plan_id, vector }) => useMissionStore.getState().updateBattlePlanVector(plan_id, vector));
+  socket.on('battleplan:vector_deleted', ({ plan_id, vector_id }) => useMissionStore.getState().removeBattlePlanVector(plan_id, vector_id));
+
   socket.on('radio:tx', (data) => {
     useMissionStore.getState().addRadioTxEvent(data);
   });

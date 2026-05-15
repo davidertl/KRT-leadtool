@@ -36,6 +36,9 @@ export const useMissionStore = create((set, get) => ({
   activeSystemId: null,
   radioTxEvents: [],
   radioMessages: [],
+  battlePlans: [],
+  activeBattlePlanId: null,
+  battlePlanVectors: {},
 
   setMissionId: (missionId) => set({ missionId }),
   setMissionInfo: (missionInfo) => set({ missionInfo }),
@@ -65,6 +68,29 @@ export const useMissionStore = create((set, get) => ({
     radioTxEvents: s.radioTxEvents.filter((e) => !(e.freqId === freqId && e.action === 'start')),
   })),
   addRadioMessage: (msg) => set((s) => ({ radioMessages: [msg, ...s.radioMessages].slice(0, 100) })),
+
+  // ---- Battle Plans ----
+  setBattlePlans: (plans) => set({ battlePlans: plans }),
+  setActiveBattlePlanId: (id) => set({ activeBattlePlanId: id }),
+  addBattlePlan: (plan) => set((s) => ({ battlePlans: [plan, ...s.battlePlans.filter((p) => p.id !== plan.id)] })),
+  updateBattlePlan: (plan) => set((s) => ({ battlePlans: s.battlePlans.map((p) => p.id === plan.id ? plan : p) })),
+  removeBattlePlan: (id) => set((s) => ({
+    battlePlans: s.battlePlans.filter((p) => p.id !== id),
+    activeBattlePlanId: s.activeBattlePlanId === id ? null : s.activeBattlePlanId,
+  })),
+  setBattlePlanVectors: (planId, vectors) => set((s) => ({ battlePlanVectors: { ...s.battlePlanVectors, [planId]: vectors } })),
+  addBattlePlanVector: (planId, vector) => set((s) => {
+    const existing = s.battlePlanVectors[planId] || [];
+    return { battlePlanVectors: { ...s.battlePlanVectors, [planId]: [...existing.filter((v) => v.id !== vector.id), vector] } };
+  }),
+  updateBattlePlanVector: (planId, vector) => set((s) => {
+    const existing = s.battlePlanVectors[planId] || [];
+    return { battlePlanVectors: { ...s.battlePlanVectors, [planId]: existing.map((v) => v.id === vector.id ? vector : v) } };
+  }),
+  removeBattlePlanVector: (planId, vectorId) => set((s) => {
+    const existing = s.battlePlanVectors[planId] || [];
+    return { battlePlanVectors: { ...s.battlePlanVectors, [planId]: existing.filter((v) => v.id !== vectorId) } };
+  }),
 
   // ---- Units ----
   setUnits: (units) => {

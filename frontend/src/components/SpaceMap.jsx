@@ -7,6 +7,7 @@ import WaypointLine from './WaypointLine';
 import ContactMarker from './ContactMarker';
 import TaskMarker from './TaskMarker';
 import { CelestialBodyMarker, NavPointMarker } from './NavPointMarker';
+import AttackVectorLine from './AttackVectorLine';
 import * as THREE from 'three';
 
 /**
@@ -60,7 +61,7 @@ function CameraFocus({ controlsRef }) {
  * Inner scene component — must be inside <Canvas> to use R3F hooks
  */
 function SceneContents() {
-  const { units, groups, waypoints, contacts, tasks, navData, selectedUnitIds } = useMissionStore();
+  const { units, groups, waypoints, contacts, tasks, navData, selectedUnitIds, activeBattlePlanId, battlePlanVectors } = useMissionStore();
   const controlsRef = useRef();
   const [isDragging, setIsDragging] = useState(false);
   const visibleUnits = units.filter((unit) => !(unit.unit_type === 'person' && unit.parent_unit_id));
@@ -138,6 +139,11 @@ function SceneContents() {
       {/* Navigation points (stations, OMs, lagrange, etc.) */}
       {navData.points?.map((point) => (
         <NavPointMarker key={`nav-${point.id}`} point={point} />
+      ))}
+
+      {/* Attack vector overlays for active battle plan */}
+      {activeBattlePlanId && (battlePlanVectors[activeBattlePlanId] || []).map((vector) => (
+        <AttackVectorLine key={`vec-${vector.id}`} vector={vector} />
       ))}
 
       {/* Origin marker */}

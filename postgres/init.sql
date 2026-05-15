@@ -787,6 +787,7 @@ CREATE TABLE IF NOT EXISTS voice_freq_listeners (
 CREATE INDEX IF NOT EXISTS idx_voice_freq_listeners_freq ON voice_freq_listeners(freq_id);
 
 CREATE TABLE IF NOT EXISTS voice_tx_events (
+
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     freq_id         INTEGER NOT NULL,
@@ -800,3 +801,40 @@ CREATE TABLE IF NOT EXISTS voice_tx_events (
 CREATE INDEX IF NOT EXISTS idx_voice_tx_events_freq ON voice_tx_events(freq_id);
 CREATE INDEX IF NOT EXISTS idx_voice_tx_events_user ON voice_tx_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_voice_tx_events_created ON voice_tx_events(created_at DESC);
+
+-- ============================================================
+-- Battle Planning
+-- ============================================================
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS battle_role VARCHAR(32) DEFAULT 'unassigned';
+
+CREATE TABLE IF NOT EXISTS battle_plans (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    mission_id      UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    name            VARCHAR(256) NOT NULL,
+    status          VARCHAR(16) NOT NULL DEFAULT 'planning',
+    created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    notes           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_battle_plans_mission ON battle_plans(mission_id);
+
+CREATE TABLE IF NOT EXISTS battle_plan_vectors (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    plan_id     UUID NOT NULL REFERENCES battle_plans(id) ON DELETE CASCADE,
+    name        VARCHAR(256) NOT NULL,
+    vector_type VARCHAR(32) NOT NULL DEFAULT 'attack',
+    start_x     DOUBLE PRECISION NOT NULL DEFAULT 0,
+    start_y     DOUBLE PRECISION NOT NULL DEFAULT 0,
+    start_z     DOUBLE PRECISION NOT NULL DEFAULT 0,
+    end_x       DOUBLE PRECISION NOT NULL DEFAULT 0,
+    end_y       DOUBLE PRECISION NOT NULL DEFAULT 0,
+    end_z       DOUBLE PRECISION NOT NULL DEFAULT 0,
+    color       VARCHAR(7) DEFAULT '#ef4444',
+    notes       TEXT,
+    sequence    INTEGER NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_battle_plan_vectors_plan ON battle_plan_vectors(plan_id);

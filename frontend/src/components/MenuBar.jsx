@@ -21,6 +21,7 @@ const MENU_ITEMS = [
   { id: 'multiplayer', hotkey: '9' },
   { id: 'bookmarks',   hotkey: '0' },
   { id: 'radio',       hotkey: null },
+  { id: 'battleplan',  hotkey: null },
   { id: 'selected',    hotkey: null },
 ];
 
@@ -29,7 +30,7 @@ export default function MenuBar({ onBack }) {
   const { popups, togglePopup, closeAll } = usePopupStore();
   const {
     units, groups, contacts, tasks, selectedUnitIds,
-    operations, events, messages, bookmarks, joinRequests, myMissionRole, radioTxEvents,
+    operations, events, messages, bookmarks, joinRequests, myMissionRole, radioTxEvents, battlePlans,
   } = useMissionStore();
   const navigate = useNavigate();
 
@@ -49,6 +50,7 @@ export default function MenuBar({ onBack }) {
     bookmarks: bookmarks.length,
     multiplayer: joinRequests.length,
     radio: radioTxEvents.filter((e) => e.action === 'start').length,
+    battleplan: battlePlans.filter((p) => p.status === 'active').length,
   };
 
   // Keyboard shortcuts (Alt+number)
@@ -85,7 +87,7 @@ export default function MenuBar({ onBack }) {
         if (!p) return null;
         const isOpen = p.open;
         const count = counts[item.id];
-        const hasActivity = (item.id === 'multiplayer' && joinRequests.length > 0) || (item.id === 'radio' && radioTxEvents.some((e) => e.action === 'start'));
+        const hasActivity = (item.id === 'multiplayer' && joinRequests.length > 0) || (item.id === 'radio' && radioTxEvents.some((e) => e.action === 'start')) || (item.id === 'battleplan' && battlePlans.some((p) => p.status === 'active'));
         const hasActiveOp = item.id === 'ops' && counts.ops > 0;
 
         return (

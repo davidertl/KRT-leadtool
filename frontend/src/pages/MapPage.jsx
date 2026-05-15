@@ -32,6 +32,7 @@ export default function MapPage() {
     setActiveSystemId, setLastSyncTime, loadFromCache,
     setMissionInfo,
     setMembers, setJoinRequests, setMyMissionRole, setMyAssignedGroups, setMyAssignedUnits,
+    setBattlePlans,
   } = useMissionStore();
 
   useEffect(() => {
@@ -57,8 +58,9 @@ export default function MapPage() {
       safeFetch(`/api/members/${missionId}/members`, creds),
       safeFetch(`/api/members/${missionId}/requests`, creds),
       safeFetch(`/api/missions/${missionId}`, creds, null),
+      safeFetch(`/api/battle-plans?mission_id=${missionId}`, creds),
     ])
-      .then(([units, groups, contacts, tasks, operations, events, messages, bookmarks, systems, waypoints, members, joinRequests, missionInfo]) => {
+      .then(([units, groups, contacts, tasks, operations, events, messages, bookmarks, systems, waypoints, members, joinRequests, missionInfo, battlePlans]) => {
         setUnits(Array.isArray(units) ? units : []);
         setGroups(Array.isArray(groups) ? groups : []);
         setContacts(Array.isArray(contacts) ? contacts : []);
@@ -70,6 +72,7 @@ export default function MapPage() {
         setWaypoints(Array.isArray(waypoints) ? waypoints : []);
         setMembers(Array.isArray(members) ? members : []);
         setJoinRequests(Array.isArray(joinRequests) ? joinRequests : []);
+        setBattlePlans(Array.isArray(battlePlans) ? battlePlans : []);
 
         // Set current user's mission role from the mission info
         if (missionInfo && missionInfo.mission_role) {
