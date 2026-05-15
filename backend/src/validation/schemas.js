@@ -20,7 +20,7 @@ const percentage = z.number().int().min(0).max(100);
 const createUnit = z.object({
   name: z.string().min(1).max(256),
   callsign: z.string().max(64).optional().nullable(),
-  vhf_frequency: z.number().int().min(1).max(99999).optional().nullable(),
+  vhf_frequency: z.number().min(0.001).max(99999).optional().nullable(),
   ship_type: z.string().max(128).optional().nullable(),
   unit_type: z.enum(UNIT_TYPES).default('ship'),
   mission_id: uuid,
@@ -44,7 +44,7 @@ const createUnit = z.object({
 const updateUnit = z.object({
   name: z.string().min(1).max(256).optional(),
   callsign: z.string().max(64).optional().nullable(),
-  vhf_frequency: z.number().int().min(1).max(99999).optional().nullable(),
+  vhf_frequency: z.number().min(0.001).max(99999).optional().nullable(),
   ship_type: z.string().max(128).optional().nullable(),
   unit_type: z.enum(UNIT_TYPES).optional(),
   group_id: optionalUuid,

@@ -54,6 +54,9 @@ export default function MultiplayerPanel({ missionId }) {
       {/* Companion status bridge toggle (gesamtlead only) */}
       {myMissionRole === 'gesamtlead' && <CompanionStatusSyncToggle missionId={missionId} />}
 
+      {/* Discord role sync (gesamtlead only) */}
+      {myMissionRole === 'gesamtlead' && <DiscordRoleSync missionId={missionId} />}
+
       {/* Update Starmap (gesamtlead only) */}
       {myMissionRole === 'gesamtlead' && <UpdateStarmapButton />}
 
@@ -528,6 +531,217 @@ function JoinRequestCard({ jr, missionId, groups, ships, myRole }) {
           ✕ Decline
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Discord role → mission role sync panel (gesamtlead only) */
+function DiscordRoleSync({ missionId }) {
+  const [open, setOpen] = useState(false);
+  const [guildId, setGuildId] = useState('');
+  const [guildRoles, setGuildRoles] = useState([]);
+  const [mappings, setMappings] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+
+  useEffect(() => {
+    fetch(`/api/missions/${missionId}/discord-roles`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => {
+        setGuildId(data.discord_guild_id || '');
+        setMappings(data.mappings || []);
+      })
+      .catch(() => {});
+  }, [missionId]);
+
+  const fetchGuildRoles = async () => {
+    try {
+      const res = await fetch(`/api/missions/${missionId}/discord-roles/guild-roles`, { credentials: 'include' });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      setGuildRoles(await res.json());
+      toast.success('Guild roles loaded');
+    } catch (err) {
+      toast.error(err.message || 'Failed to fetch guild roles');
+    }
+  };
+
+  const toggleMapping = (role, missionRole) => {
+    setMappings((prev) => {
+      const existing = prev.find((m) => m.discord_role_id === role.id);
+      if (existing) {
+        if (existing.mission_role === missionRole) return prev.filter((m) => m.discord_role_id !== role.id);
+        return prev.map((m) => m.discord_role_id === role.id ? { ...m, mission_role: missionRole } : m);
+      }
+      return [...prev, { discord_role_id: role.id, discord_role_name: role.name, mission_role: missionRole }];
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/missions/${missionId}/discord-roles`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ discord_guild_id: guildId.trim() || null, mappings }),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      toast.success('Discord role settings saved');
+    } catch { toast.error('Failed to save'); }
+    setSaving(false);
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setLastResult(null);
+    try {
+      const res = await fetch(`/api/missions/${missionId}/discord-roles/sync`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setLastResult(data);
+      toast.success(`Sync complete — ${data.updated.length} role(s) updated`);
+    } catch (err) {
+      toast.error(err.message || 'Sync failed');
+    }
+    setSyncing(false);
+  };
+
+  const ROLE_LABELS_LOCAL = { gesamtlead: 'Gesamtlead', gruppenlead: 'Gruppenlead', teamlead: 'Teamlead' };
+  const ROLE_COLORS_LOCAL = { gesamtlead: '#ef4444', gruppenlead: '#f59e0b', teamlead: '#3b82f6' };
+
+  return (
+    <div className="bg-krt-bg/80 rounded-lg p-3">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center justify-between w-full"
+      >
+        <div>
+          <label className="text-xs text-gray-500 block text-left cursor-pointer">Discord Role Sync</label>
+          <span className="text-sm font-medium text-purple-400">
+            {guildId ? `Guild ${guildId.slice(0, 8)}…` : 'Not configured'}
+          </span>
+        </div>
+        <span className="text-gray-500 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-3">
+          {/* Guild ID */}
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Discord Guild ID</label>
+            <div className="flex gap-2">
+              <input
+                value={guildId}
+                onChange={(e) => setGuildId(e.target.value)}
+                placeholder="Discord guild / server ID"
+                className="flex-1 bg-krt-bg border border-krt-border rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-krt-accent"
+              />
+              <button
+                onClick={fetchGuildRoles}
+                disabled={!guildId.trim()}
+                className="text-xs px-2 py-1 rounded border border-purple-500/40 text-purple-400 hover:bg-purple-500/10 disabled:opacity-40"
+              >
+                Load Roles
+              </button>
+            </div>
+          </div>
+
+          {/* Role mapping table */}
+          {guildRoles.length > 0 && (
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Map Discord roles → Mission roles</label>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {guildRoles.map((role) => {
+                  const mapped = mappings.find((m) => m.discord_role_id === role.id);
+                  return (
+                    <div key={role.id} className="flex items-center gap-2 text-xs">
+                      <span
+                        className="flex-1 px-1.5 py-0.5 rounded text-[10px] truncate"
+                        style={role.color ? { backgroundColor: `#${role.color.toString(16).padStart(6,'0')}25`, color: `#${role.color.toString(16).padStart(6,'0')}` } : { backgroundColor: '#374151', color: '#9ca3af' }}
+                      >
+                        {role.name}
+                      </span>
+                      <div className="flex gap-1">
+                        {['gesamtlead', 'gruppenlead', 'teamlead'].map((mr) => (
+                          <button
+                            key={mr}
+                            onClick={() => toggleMapping(role, mr)}
+                            className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                              mapped?.mission_role === mr
+                                ? 'text-white'
+                                : 'text-gray-500 bg-krt-panel border border-krt-border hover:text-white'
+                            }`}
+                            style={mapped?.mission_role === mr ? { backgroundColor: ROLE_COLORS_LOCAL[mr] } : {}}
+                          >
+                            {ROLE_LABELS_LOCAL[mr].slice(0, 4)}
+                          </button>
+                        ))}
+                        {mapped && (
+                          <button
+                            onClick={() => setMappings((prev) => prev.filter((m) => m.discord_role_id !== role.id))}
+                            className="text-[10px] text-red-500 hover:text-red-400 px-1"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Saved mappings (when no guild roles fetched yet) */}
+          {guildRoles.length === 0 && mappings.length > 0 && (
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Current mappings ({mappings.length})</label>
+              {mappings.map((m) => (
+                <div key={m.discord_role_id} className="flex items-center gap-2 text-[10px] text-gray-400">
+                  <span>{m.discord_role_name || m.discord_role_id}</span>
+                  <span>→</span>
+                  <span style={{ color: ROLE_COLORS_LOCAL[m.mission_role] }}>{ROLE_LABELS_LOCAL[m.mission_role]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Sync result */}
+          {lastResult && (
+            <div className="text-[10px] text-gray-400 space-y-0.5">
+              {lastResult.updated.map((u, i) => (
+                <div key={i} className="text-green-400">✓ {u.username}: {u.old} → {u.new}</div>
+              ))}
+              {lastResult.failed.map((f, i) => (
+                <div key={i} className="text-red-400">✗ {f.username}: {f.reason}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="text-xs px-3 py-1 rounded bg-krt-accent/20 text-krt-accent border border-krt-accent/40 hover:bg-krt-accent/30 disabled:opacity-40"
+            >
+              {saving ? 'Saving…' : 'Save Settings'}
+            </button>
+            <button
+              onClick={handleSync}
+              disabled={syncing || !guildId.trim() || mappings.length === 0}
+              className="text-xs px-3 py-1 rounded bg-purple-500/20 text-purple-400 border border-purple-500/40 hover:bg-purple-500/30 disabled:opacity-40"
+            >
+              {syncing ? 'Syncing…' : '⟳ Sync Now'}
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-600">Requires DISCORD_BOT_TOKEN on server. Fetches each member's guild roles and maps to mission roles.</p>
+        </div>
+      )}
     </div>
   );
 }

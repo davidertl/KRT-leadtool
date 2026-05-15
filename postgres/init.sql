@@ -225,7 +225,7 @@ CREATE TABLE units (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name            VARCHAR(256) NOT NULL,
     callsign        VARCHAR(64),                      -- short name / tactical callsign e.g. "Alpha-1"
-    vhf_frequency   INTEGER CHECK (vhf_frequency >= 1 AND vhf_frequency <= 99999),  -- VHF freq 00001-99999
+    vhf_frequency   NUMERIC(8,3) CHECK (vhf_frequency >= 0.001 AND vhf_frequency <= 99999),  -- VHF freq e.g. 162.400 MHz
     ship_type       VARCHAR(128),                     -- e.g. "Carrack", "Gladius" (autofill from known types)
     unit_type       unit_type NOT NULL DEFAULT 'ship',
     owner_id        UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -728,3 +728,75 @@ CREATE TABLE operation_notes (
 );
 
 CREATE INDEX idx_operation_notes_op ON operation_notes(operation_id);
+
+-- ============================================================
+-- Discord Role Mappings
+-- ============================================================
+CREATE TABLE IF NOT EXISTS discord_role_mappings (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    mission_id          UUID NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    discord_role_id     VARCHAR(32) NOT NULL,
+    discord_role_name   VARCHAR(128),
+    mission_role        VARCHAR(32) NOT NULL DEFAULT 'teamlead',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (mission_id, discord_role_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_discord_role_mappings_mission ON discord_role_mappings(mission_id);
+
+ALTER TABLE missions ADD COLUMN IF NOT EXISTS discord_guild_id VARCHAR(32);
+
+-- ============================================================
+-- Companion Sessions (app auth tokens)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS companion_sessions (
+    id              UUID PRIMARY KEY,
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash      VARCHAR(64) NOT NULL UNIQUE,
+    session_name    VARCHAR(128),
+    scopes          JSONB NOT NULL DEFAULT '[]',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ NOT NULL,
+    revoked_at      TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_companion_sessions_user ON companion_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_companion_sessions_token ON companion_sessions(token_hash);
+
+-- ============================================================
+-- Voice Relay Tables
+-- ============================================================
+CREATE TABLE IF NOT EXISTS voice_sessions (
+    session_token_hash  VARCHAR(64) PRIMARY KEY,
+    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    username            VARCHAR(128),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS voice_freq_listeners (
+    session_token_hash  VARCHAR(64) NOT NULL REFERENCES voice_sessions(session_token_hash) ON DELETE CASCADE,
+    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    freq_id             INTEGER NOT NULL,
+    radio_slot          INTEGER DEFAULT 0,
+    joined_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (session_token_hash, freq_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_voice_freq_listeners_freq ON voice_freq_listeners(freq_id);
+
+CREATE TABLE IF NOT EXISTS voice_tx_events (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    freq_id         INTEGER NOT NULL,
+    radio_slot      INTEGER,
+    action          VARCHAR(16) NOT NULL,
+    source          VARCHAR(32) DEFAULT 'companion',
+    metadata        JSONB DEFAULT '{}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_voice_tx_events_freq ON voice_tx_events(freq_id);
+CREATE INDEX IF NOT EXISTS idx_voice_tx_events_user ON voice_tx_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_voice_tx_events_created ON voice_tx_events(created_at DESC);

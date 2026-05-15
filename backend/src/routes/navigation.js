@@ -4,7 +4,7 @@
 
 const router = require('express').Router();
 const { query } = require('../db/postgres');
-const { requireAuth } = require('../auth/jwt');
+const { requireAuth, requireRole } = require('../auth/jwt');
 const { seedNavigation } = require('../db/seed');
 
 // ============================================================
@@ -226,7 +226,7 @@ router.get('/route', requireAuth, async (req, res, next) => {
 // ============================================================
 
 /** DELETE /api/navigation/reset — wipe all navigation data */
-router.delete('/reset', requireAuth, async (req, res, next) => {
+router.delete('/reset', requireAuth, requireRole('admin'), async (req, res, next) => {
   try {
     // Delete in dependency order
     await query('DELETE FROM jump_edges');
@@ -243,7 +243,7 @@ router.delete('/reset', requireAuth, async (req, res, next) => {
 // ============================================================
 
 /** POST /api/navigation/reseed — re-run seed_stanton.sql (idempotent) */
-router.post('/reseed', requireAuth, async (req, res, next) => {
+router.post('/reseed', requireAuth, requireRole('admin'), async (req, res, next) => {
   try {
     const ok = await seedNavigation();
     if (!ok) {

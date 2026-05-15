@@ -8,6 +8,7 @@ const { query } = require('../../db/postgres');
 const { requireCompanionAuth } = require('../../auth/companion');
 const { requireMissionMember } = require('../../auth/teamAuth');
 const { validate } = require('../../validation/middleware');
+const { broadcastToMission } = require('../../socket');
 
 const txEventSchema = z.object({
   freqId: z.number().int().min(1000).max(9999),
@@ -54,6 +55,20 @@ function createVoiceRoutes({ voiceRelay }) {
       };
 
       voiceRelay.notifyTxEvent(payload);
+
+      // Broadcast to web lead via Socket.IO — look up which mission the user is in
+      const missionResult = await query(
+        `SELECT mission_id FROM mission_members WHERE user_id = $1 LIMIT 1`,
+        [req.user.id]
+      ).catch(() => ({ rows: [] }));
+      if (missionResult.rows[0]?.mission_id) {
+        broadcastToMission(missionResult.rows[0].mission_id, 'radio:tx', {
+          freqId: req.body.freqId,
+          action: req.body.action,
+          userId: req.user.id,
+          username: req.user.username,
+        });
+      }
 
       res.json({
         ok: true,

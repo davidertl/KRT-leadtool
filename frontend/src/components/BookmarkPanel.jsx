@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
  * Bookmarks panel — save and navigate to map locations
  */
 export default function BookmarkPanel({ missionId }) {
-  const { bookmarks, focusPosition } = useMissionStore();
+  const { bookmarks, focusPosition, focusedPosition, focusedUnitId, units } = useMissionStore();
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const [posX, setPosX] = useState(0);
@@ -51,6 +51,23 @@ export default function BookmarkPanel({ missionId }) {
       toast.success('Bookmark deleted');
     } catch {
       toast.error('Failed to delete');
+    }
+  };
+
+  const handleUseCameraPosition = () => {
+    if (focusedPosition) {
+      setPosX(parseFloat(focusedPosition.x?.toFixed(1)) || 0);
+      setPosY(parseFloat(focusedPosition.y?.toFixed(1)) || 0);
+      setPosZ(parseFloat(focusedPosition.z?.toFixed(1)) || 0);
+    } else if (focusedUnitId) {
+      const u = units.find((un) => un.id === focusedUnitId);
+      if (u) {
+        setPosX(parseFloat(u.pos_x?.toFixed(1)) || 0);
+        setPosY(parseFloat(u.pos_y?.toFixed(1)) || 0);
+        setPosZ(parseFloat(u.pos_z?.toFixed(1)) || 0);
+      }
+    } else {
+      toast('Focus a unit or position on the map first', { icon: 'ℹ️' });
     }
   };
 
@@ -106,6 +123,17 @@ export default function BookmarkPanel({ missionId }) {
             className="w-full bg-krt-panel border border-krt-border rounded px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-krt-accent"
             autoFocus
           />
+          <div className="flex items-center gap-1 mb-1">
+            <span className="text-xs text-gray-500">Coordinates</span>
+            <button
+              type="button"
+              onClick={handleUseCameraPosition}
+              className="ml-auto text-[10px] text-krt-accent hover:text-blue-400 px-1.5 py-0.5 rounded bg-krt-bg border border-krt-border"
+              title="Fill from current map focus"
+            >
+              Use camera position
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <input type="number" value={posX} onChange={(e) => setPosX(parseFloat(e.target.value) || 0)} placeholder="X"
               className="w-full bg-krt-panel border border-krt-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-krt-accent" />

@@ -145,6 +145,20 @@ export function connectSocket(missionId) {
   socket.on('member:removed', ({ user_id }) => {
     useMissionStore.getState().removeMember(user_id);
   });
+  socket.on('member:updated', (data) => {
+    useMissionStore.getState().updateMember(data);
+  });
+
+  socket.on('radio:tx', (data) => {
+    useMissionStore.getState().addRadioTxEvent(data);
+  });
+  socket.on('radio:message', (data) => {
+    useMissionStore.getState().addRadioMessage(data);
+    toast(`📻 [${data.freq_id} MHz] ${data.username}: ${data.message}`, {
+      duration: 6000,
+      style: { background: '#1a1f2e', color: '#a78bfa', border: '1px solid #6d28d9' },
+    });
+  });
 
   return socket;
 }

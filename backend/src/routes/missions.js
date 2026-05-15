@@ -136,6 +136,15 @@ router.post('/:id/members', requireAuth, requireMissionMember, requireGesamtlead
     const { user_id, role } = req.body;
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
+    // Only mission owners or admin members may add members
+    const accessCheck = await query(
+      `SELECT m.id FROM missions m
+       LEFT JOIN mission_members mm ON mm.mission_id = m.id AND mm.user_id = $2
+       WHERE m.id = $1 AND (m.owner_id = $2 OR mm.role = 'admin')`,
+      [req.params.id, req.user.id]
+    );
+    if (accessCheck.rows.length === 0) return res.status(403).json({ error: 'Only mission admins can add members' });
+
     await query(
       `INSERT INTO mission_members (mission_id, user_id, role)
        VALUES ($1, $2, $3)

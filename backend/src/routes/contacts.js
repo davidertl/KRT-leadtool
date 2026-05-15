@@ -97,6 +97,14 @@ router.post('/', requireAuth, validate(createContact), requireMissionMember, asy
 // Update contact
 router.put('/:id', requireAuth, validate(updateContact), async (req, res, next) => {
   try {
+    const existing = await query('SELECT id, mission_id FROM contacts WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Contact not found' });
+    const memberCheck = await query(
+      'SELECT role FROM mission_members WHERE mission_id = $1 AND user_id = $2',
+      [existing.rows[0].mission_id, req.user.id]
+    );
+    if (memberCheck.rows.length === 0) return res.status(403).json({ error: 'You are not a member of this mission' });
+
     const fields = [];
     const values = [];
     for (const [key, val] of Object.entries(req.body)) {
@@ -130,13 +138,16 @@ router.put('/:id', requireAuth, validate(updateContact), async (req, res, next) 
 // Delete contact
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    const result = await query(
-      'DELETE FROM contacts WHERE id = $1 RETURNING id, mission_id',
-      [req.params.id]
+    const existing = await query('SELECT id, mission_id FROM contacts WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Contact not found' });
+    const memberCheck = await query(
+      'SELECT role FROM mission_members WHERE mission_id = $1 AND user_id = $2',
+      [existing.rows[0].mission_id, req.user.id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Contact not found' });
+    if (memberCheck.rows.length === 0) return res.status(403).json({ error: 'You are not a member of this mission' });
 
-    broadcastToMission(result.rows[0].mission_id, 'contact:deleted', { id: result.rows[0].id });
+    await query('DELETE FROM contacts WHERE id = $1', [req.params.id]);
+    broadcastToMission(existing.rows[0].mission_id, 'contact:deleted', { id: existing.rows[0].id });
     res.json({ message: 'Contact deleted' });
   } catch (err) { next(err); }
 });

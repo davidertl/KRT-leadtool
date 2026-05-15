@@ -323,6 +323,14 @@ function ActiveOperation({ op, missionId }) {
   const currentPhase = PHASES.find((p) => p.value === op.phase);
   const phaseIdx = PHASES.findIndex((p) => p.value === op.phase);
 
+  // DB-defined phases for this operation (user-created, sorted by sort_order)
+  const myPhases = useMemo(
+    () => operationPhases.filter((p) => p.operation_id === op.id).sort((a, b) => a.sort_order - b.sort_order),
+    [operationPhases, op.id]
+  );
+  const activePhaseIdx = myPhases.findIndex((p) => p.actual_start && !p.actual_end);
+  const nextToStartIdx = activePhaseIdx >= 0 ? activePhaseIdx + 1 : myPhases.findIndex((p) => !p.actual_start);
+
   /* Fetch child data on mount */
   useEffect(() => {
     const load = async () => {
@@ -381,10 +389,31 @@ function ActiveOperation({ op, missionId }) {
     }
   };
 
-  const advancePhase = () => {
-    if (phaseIdx < PHASES.length - 1) {
-      updateOp({ phase: PHASES[phaseIdx + 1].value });
+  const advancePhase = async () => {
+    if (myPhases.length === 0) {
+      // No user-defined phases — advance the legacy phase enum
+      if (phaseIdx < PHASES.length - 1) {
+        updateOp({ phase: PHASES[phaseIdx + 1].value });
+      }
+      return;
     }
+    const now = new Date().toISOString();
+    try {
+      if (activePhaseIdx >= 0) {
+        await fetch(`/api/operation-phases/${myPhases[activePhaseIdx].id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+          body: JSON.stringify({ actual_end: now }),
+        });
+      }
+      if (nextToStartIdx >= 0 && nextToStartIdx < myPhases.length) {
+        await fetch(`/api/operation-phases/${myPhases[nextToStartIdx].id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+          body: JSON.stringify({ actual_start: now }),
+        });
+      } else {
+        updateOp({ phase: 'complete' });
+      }
+    } catch { toast.error('Failed to advance phase'); }
   };
 
   const setTimerMinutes = (min) => {
@@ -435,19 +464,26 @@ function ActiveOperation({ op, missionId }) {
           <div>
             <label className="text-xs text-gray-500 block mb-1">Phase</label>
             <div className="flex gap-0.5 mb-2">
-              {PHASES.map((p, i) => (
+              {(myPhases.length > 0 ? myPhases : PHASES).map((p, i) => (
                 <div
-                  key={p.value}
+                  key={myPhases.length > 0 ? p.id : p.value}
                   className="h-1.5 flex-1 rounded-full cursor-pointer"
-                  style={{ backgroundColor: i <= phaseIdx ? currentPhase?.color : '#1f2937' }}
-                  onClick={() => updateOp({ phase: p.value })}
-                  title={p.label}
+                  style={{
+                    backgroundColor: myPhases.length > 0
+                      ? (p.actual_end ? '#22c55e' : i === activePhaseIdx ? (currentPhase?.color || '#3b82f6') : '#1f2937')
+                      : (i <= phaseIdx ? currentPhase?.color : '#1f2937'),
+                  }}
+                  onClick={() => myPhases.length === 0 && updateOp({ phase: p.value })}
+                  title={myPhases.length > 0 ? p.name : p.label}
                 />
               ))}
             </div>
             {op.phase !== 'complete' && (
               <button onClick={advancePhase} className="text-xs text-krt-accent hover:text-blue-400">
-                → Advance to {PHASES[phaseIdx + 1]?.label || 'next'}
+                → Advance to {myPhases.length > 0
+                  ? (nextToStartIdx >= 0 && nextToStartIdx < myPhases.length ? myPhases[nextToStartIdx].name : 'Complete')
+                  : (PHASES[phaseIdx + 1]?.label || 'next')
+                }
               </button>
             )}
           </div>

@@ -51,6 +51,11 @@ router.get('/:id', requireAuth, async (req, res, next) => {
   try {
     const result = await query(`SELECT * FROM operations WHERE id = $1`, [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Operation not found' });
+    const memberCheck = await query(
+      'SELECT role FROM mission_members WHERE mission_id = $1 AND user_id = $2',
+      [result.rows[0].mission_id, req.user.id]
+    );
+    if (memberCheck.rows.length === 0) return res.status(403).json({ error: 'You are not a member of this mission' });
     res.json(result.rows[0]);
   } catch (err) { next(err); }
 });
@@ -74,6 +79,14 @@ router.post('/', requireAuth, validate(createOp), requireMissionMember, async (r
 /** PUT /api/operations/:id */
 router.put('/:id', requireAuth, validate(updateOp), async (req, res, next) => {
   try {
+    const existing = await query('SELECT id, mission_id FROM operations WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Operation not found' });
+    const memberCheck = await query(
+      'SELECT role FROM mission_members WHERE mission_id = $1 AND user_id = $2',
+      [existing.rows[0].mission_id, req.user.id]
+    );
+    if (memberCheck.rows.length === 0) return res.status(403).json({ error: 'You are not a member of this mission' });
+
     const fields = [];
     const values = [];
     for (const [key, val] of Object.entries(req.body)) {
@@ -162,12 +175,16 @@ router.put('/:id', requireAuth, validate(updateOp), async (req, res, next) => {
 /** DELETE /api/operations/:id */
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    const result = await query(
-      'DELETE FROM operations WHERE id = $1 RETURNING id, mission_id',
-      [req.params.id]
+    const existing = await query('SELECT id, mission_id FROM operations WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Operation not found' });
+    const memberCheck = await query(
+      'SELECT role FROM mission_members WHERE mission_id = $1 AND user_id = $2',
+      [existing.rows[0].mission_id, req.user.id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Operation not found' });
-    broadcastToMission(result.rows[0].mission_id, 'operation:deleted', { id: result.rows[0].id });
+    if (memberCheck.rows.length === 0) return res.status(403).json({ error: 'You are not a member of this mission' });
+
+    await query('DELETE FROM operations WHERE id = $1', [req.params.id]);
+    broadcastToMission(existing.rows[0].mission_id, 'operation:deleted', { id: existing.rows[0].id });
     res.json({ message: 'Operation deleted' });
   } catch (err) { next(err); }
 });

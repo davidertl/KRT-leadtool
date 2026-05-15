@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '{print $NF}')",
+      "Bash(docker --version)",
+      "Bash(docker run *)",
+      "Bash(docker exec *)",
+      "Bash(curl -s http://localhost:3000/api/health)",
+      "Bash(curl -s -o /dev/null -w \"Frontend HTTP %{http_code}\" http://localhost:5173/)"
+    ]
+  }
+}

@@ -34,6 +34,8 @@ export const useMissionStore = create((set, get) => ({
   searchQuery: '',
   statusFilter: [],
   activeSystemId: null,
+  radioTxEvents: [],
+  radioMessages: [],
 
   setMissionId: (missionId) => set({ missionId }),
   setMissionInfo: (missionInfo) => set({ missionInfo }),
@@ -47,6 +49,22 @@ export const useMissionStore = create((set, get) => ({
   focusPosition: (pos) => set({ focusedPosition: pos, focusedUnitId: null }),
   clearFocus: () => set({ focusedUnitId: null, focusedPosition: null }),
   setActiveSystemId: (id) => set({ activeSystemId: id }),
+
+  addRadioTxEvent: (ev) => set((s) => {
+    // Keep last 30 TX events; auto-clear 'start' after 10s
+    const filtered = s.radioTxEvents.filter((e) => e.freqId !== ev.freqId || e.action !== 'start');
+    const next = [ev, ...filtered].slice(0, 30);
+    if (ev.action === 'start') {
+      setTimeout(() => {
+        useMissionStore.getState().clearRadioTx(ev.freqId);
+      }, 10000);
+    }
+    return { radioTxEvents: next };
+  }),
+  clearRadioTx: (freqId) => set((s) => ({
+    radioTxEvents: s.radioTxEvents.filter((e) => !(e.freqId === freqId && e.action === 'start')),
+  })),
+  addRadioMessage: (msg) => set((s) => ({ radioMessages: [msg, ...s.radioMessages].slice(0, 100) })),
 
   // ---- Units ----
   setUnits: (units) => {

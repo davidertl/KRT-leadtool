@@ -35,6 +35,8 @@ const operationPhasesRoutes = require('./routes/operationPhases');
 const operationRoeRoutes = require('./routes/operationRoe');
 const operationNotesRoutes = require('./routes/operationNotes');
 const companionRoutes = require('./routes/companion');
+const radioRoutes = require('./routes/radio');
+const discordRolesRoutes = require('./routes/discord_roles');
 
 // Passport config
 require('./auth/discord');
@@ -95,6 +97,8 @@ function createApp({ enabledModules = getEnabledModules(), extraRouteRegistratio
     app.use('/api/operation-phases', operationPhasesRoutes);
     app.use('/api/operation-roe', operationRoeRoutes);
     app.use('/api/operation-notes', operationNotesRoutes);
+    app.use('/api/radio', radioRoutes);
+    app.use('/api/missions/:id/discord-roles', discordRolesRoutes);
   }
 
   if (modules.has('voice')) {
