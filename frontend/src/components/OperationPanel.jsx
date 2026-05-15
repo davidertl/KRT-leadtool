@@ -103,15 +103,17 @@ export default function OperationPanel({ missionId }) {
   return (
     <div className="space-y-3">
       {!activeOp && !showCreate && (
-        <>
-          <p className="text-gray-500 text-sm text-center py-2">No active operation</p>
+        <div className="text-center py-5 space-y-2">
+          <div className="text-3xl">🎯</div>
+          <p className="text-sm text-gray-400 font-medium">No active operation</p>
+          <p className="text-xs text-gray-600">An operation tracks the current mission phase, ROE, timer, and notes. Create one to coordinate your engagement.</p>
           <button
             onClick={() => setShowCreate(true)}
-            className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1"
+            className="text-sm text-krt-accent hover:text-blue-400 py-1 border border-krt-accent/30 px-3 rounded hover:bg-krt-accent/10 transition-colors"
           >
             + Start New Operation
           </button>
-        </>
+        </div>
       )}
 
       {showCreate && (

@@ -104,7 +104,15 @@ export default function RadioNetPanel({ missionId }) {
 
       {/* Frequency channels */}
       {allFreqs.length === 0 && !loading && (
-        <p className="text-xs text-gray-600 text-center py-4">No frequencies assigned yet.<br />Assign VHF frequencies to units or groups.</p>
+        <div className="text-center py-5 space-y-1">
+          <div className="text-2xl">📻</div>
+          <p className="text-sm text-gray-400 font-medium">No frequencies monitored</p>
+          <p className="text-xs text-gray-600">
+            Assign a <strong className="text-gray-400">VHF Frequency</strong> to ships (in the Units panel)
+            or a <strong className="text-gray-400">VHF Channel</strong> to groups (in Groups) to see them here.
+            Companion app users will show as active listeners.
+          </p>
+        </div>
       )}
 
       <div className="space-y-2">
@@ -187,7 +195,8 @@ export default function RadioNetPanel({ missionId }) {
 
       {/* Text message on frequency (lead only) */}
       <div className="border-t border-krt-border pt-3">
-        <label className="text-xs text-gray-500 block mb-2">Text Broadcast</label>
+        <label className="text-xs text-gray-500 block mb-0.5">Text Broadcast</label>
+        <p className="text-[10px] text-gray-600 mb-2">Send a text message visible to all mission members (shown as a toast notification).</p>
         <form onSubmit={handleTransmit} className="space-y-2">
           <select
             value={msgFreq}

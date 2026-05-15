@@ -330,7 +330,17 @@ function ContactListItem({ contact, inactive, onEdit, canEdit }) {
         </div>
       </div>
       <div className="text-sm text-white mt-0.5">{contact.name || 'Unknown'} {contact.count > 1 && `×${contact.count}`}</div>
-      <div className="text-xs text-gray-500">{contact.ship_type || 'Unknown ship'} • ({contact.pos_x?.toFixed(0)}, {contact.pos_y?.toFixed(0)}, {contact.pos_z?.toFixed(0)})</div>
+      <div className="text-xs text-gray-500">
+        {contact.ship_type || 'Unknown vessel'}
+        {' · '}
+        <button
+          className="hover:text-krt-accent transition-colors"
+          title={`Focus camera on this contact (${contact.pos_x?.toFixed(0)}, ${contact.pos_y?.toFixed(0)}, ${contact.pos_z?.toFixed(0)})`}
+          onClick={(e) => { e.stopPropagation(); useMissionStore.getState().focusPosition({ x: contact.pos_x, y: contact.pos_y, z: contact.pos_z }); }}
+        >
+          ▶ show on map
+        </button>
+      </div>
       {contact.notes && <div className="text-xs text-gray-400 mt-1 italic">{contact.notes}</div>}
     </div>
   );
@@ -820,6 +830,18 @@ function UnitsPopup({ missionId }) {
           <button onClick={() => setShowCreate(!showCreate)} className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1">+ Add Unit</button>
         )}
         {showCreate && <CreateUnitForm missionId={missionId} groups={groups} onClose={() => setShowCreate(false)} />}
+        {vehicleUnits.length === 0 && !showCreate && (
+          <div className="text-center py-6 space-y-1">
+            <div className="text-2xl">🚀</div>
+            <p className="text-sm text-gray-400 font-medium">No ships yet</p>
+            {canCreateUnits
+              ? <p className="text-xs text-gray-600">Click <strong className="text-krt-accent">+ Add Unit</strong> above to register ships and vehicles for this mission.</p>
+              : <p className="text-xs text-gray-600">Gesamtlead or Gruppenlead must add ships to this mission.</p>}
+          </div>
+        )}
+        {vehicleUnits.length > 0 && filtered.length === 0 && (
+          <p className="text-xs text-gray-500 text-center py-4">No ships match the current filter.</p>
+        )}
         {filtered.map((unit) => {
           const group = groups.find((g) => g.id === unit.group_id);
           return <UnitListItem key={unit.id} unit={unit} group={group} isSelected={selectedUnitIds.includes(unit.id)} />;
@@ -841,6 +863,15 @@ function GroupsPopup({ missionId }) {
           <button onClick={() => setShowCreate(!showCreate)} className="w-full text-left text-sm text-krt-accent hover:text-blue-400 py-1">+ Add Group</button>
         )}
         {showCreate && <CreateGroupForm missionId={missionId} onClose={() => setShowCreate(false)} />}
+        {groups.length === 0 && !showCreate && (
+          <div className="text-center py-6 space-y-1">
+            <div className="text-2xl">👥</div>
+            <p className="text-sm text-gray-400 font-medium">No groups yet</p>
+            {canCreate
+              ? <p className="text-xs text-gray-600">Click <strong className="text-krt-accent">+ Add Group</strong> above to create squadrons or fleet groups. Then assign ships to them in the Units panel.</p>
+              : <p className="text-xs text-gray-600">Gesamtlead must create groups for this mission.</p>}
+          </div>
+        )}
         {groups.map((group) => {
           const groupUnits = units.filter((u) => u.group_id === group.id);
           const vehicles = groupUnits.filter((u) => u.unit_type !== 'person');
@@ -875,7 +906,13 @@ function ContactsPopup({ missionId }) {
           <SpotrepForm missionId={missionId} contact={editingContact} onClose={() => setEditingContact(null)} />
         )}
         {contacts.filter((c) => c.is_active).length === 0 && !showSpotrep && !editingContact && (
-          <p className="text-gray-500 text-sm text-center py-4">No active contacts.</p>
+          <div className="text-center py-6 space-y-1">
+            <div className="text-2xl">📡</div>
+            <p className="text-sm text-gray-400 font-medium">No active contacts</p>
+            {canCreate
+              ? <p className="text-xs text-gray-600">Click <strong className="text-krt-accent">+ File SPOTREP</strong> above to report a hostile, neutral, or unknown contact spotted in-game.</p>
+              : <p className="text-xs text-gray-600">Gesamtlead or Gruppenlead can file SPOTREPs for enemy contacts.</p>}
+          </div>
         )}
         {contacts.filter((c) => c.is_active).map((contact) => (
           <ContactListItem key={contact.id} contact={contact} onEdit={handleEdit} canEdit={canCreate} />
@@ -918,7 +955,13 @@ function TasksPopup({ missionId }) {
           <TaskForm missionId={missionId} task={editingTask} onClose={() => setEditingTask(null)} />
         )}
         {active.length === 0 && !showCreate && !editingTask && (
-          <p className="text-gray-500 text-sm text-center py-4">No active tasks.</p>
+          <div className="text-center py-6 space-y-1">
+            <div className="text-2xl">📋</div>
+            <p className="text-sm text-gray-400 font-medium">No active tasks</p>
+            {canCreate
+              ? <p className="text-xs text-gray-600">Click <strong className="text-krt-accent">+ Add Task</strong> above to assign orders — escort, intercept, patrol, rescue, and more.</p>
+              : <p className="text-xs text-gray-600">Gesamtlead or Gruppenlead can assign tasks to ships.</p>}
+          </div>
         )}
         {active.map((task) => <TaskListItem key={task.id} task={task} onEdit={canCreate ? handleEdit : undefined} />)}
         {done.length > 0 && (
