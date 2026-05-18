@@ -319,4 +319,9 @@ public partial class MainWindow : Window
     {
         await _vm.SetCommsUnitPositionAsync();
     }
+
+    private async void CommsRefreshTasks_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.LoadCommsTasksAsync();
+    }
 }

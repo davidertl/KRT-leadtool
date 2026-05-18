@@ -23,6 +23,55 @@ public sealed class BoardChoice
     public string Display { get; set; } = "";
 }
 
+/// <summary>Display model for a task assigned to the user's unit/group.</summary>
+public sealed class CommsTaskDisplayItem
+{
+    public string Id { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string TypeAndStatus { get; init; } = "";
+    public string PriorityLabel { get; init; } = "";
+    public string PriorityColor { get; init; } = "#6b7280";
+    public string Description { get; init; } = "";
+    public bool HasDescription { get; init; }
+
+    public static CommsTaskDisplayItem From(CompanionTaskItem t)
+    {
+        var (priorityLabel, priorityColor) = (t.Priority?.ToLower()) switch
+        {
+            "critical" => ("!! CRITICAL", "#ef4444"),
+            "high"     => ("! HIGH",      "#f59e0b"),
+            "low"      => ("LOW",          "#4b5563"),
+            _          => ("NORMAL",       "#6b7280"),
+        };
+        var typeLabel = (t.TaskType) switch
+        {
+            "attack"  => "Attack",
+            "defend"  => "Defend",
+            "patrol"  => "Patrol",
+            "escort"  => "Escort",
+            "recon"   => "Recon",
+            "extract" => "Extract",
+            _         => "Task",
+        };
+        var statusLabel = (t.Status) switch
+        {
+            "in_progress" => "In Progress",
+            "completed"   => "Completed",
+            _             => "Pending",
+        };
+        return new CommsTaskDisplayItem
+        {
+            Id = t.Id,
+            Title = t.Title,
+            TypeAndStatus = $"{typeLabel} · {statusLabel}",
+            PriorityLabel = priorityLabel,
+            PriorityColor = priorityColor,
+            Description = t.Description ?? "",
+            HasDescription = !string.IsNullOrWhiteSpace(t.Description),
+        };
+    }
+}
+
 /// <summary>Status type for Comms buttons (from backend or default).</summary>
 public sealed class StatusTypeItem
 {
@@ -405,6 +454,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool CommsCanResetPosition => !CommsResetPositionSending && !string.IsNullOrEmpty(CommsSelectedMissionId) && !string.IsNullOrEmpty(CommsLocationUnitId) && IsLoggedIn;
 
+    /// <summary>Tasks assigned to the user's unit or group in the selected mission.</summary>
+    public ObservableCollection<CommsTaskDisplayItem> CommsMyTasks { get; } = new();
+
+    private string _commsTasksMessage = "";
+    public string CommsTasksMessage
+    {
+        get => _commsTasksMessage;
+        set { _commsTasksMessage = value; OnPropertyChanged(); }
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _commsTaskTimer;
+
     /// <summary>Status types for Comms buttons (fetched from backend or default).</summary>
     public ObservableCollection<StatusTypeItem> CommsStatusTypes { get; } = new();
 
@@ -505,6 +566,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             else if (CommsReportableUnits.Count > 0 && string.IsNullOrEmpty(CommsSelectedUnitId))
                 CommsSelectedUnitId = CommsReportableUnits[0].Id;
             CommsStatusMessage = "";
+            await LoadCommsTasksAsync();
+            StartCommsTaskPolling();
         }
         catch (Exception ex)
         {
@@ -652,6 +715,48 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             CommsSetPositionSending = false;
         }
+    }
+
+    public async Task LoadCommsTasksAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CommsSelectedMissionId) || !IsLoggedIn) return;
+        var endpoint = ResolveServerEndpoint();
+        var baseUrl = endpoint.Scheme == "http"
+            ? $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}"
+            : (endpoint.Port == 443 ? $"{endpoint.Scheme}://{endpoint.Host}" : $"{endpoint.Scheme}://{endpoint.Host}:{endpoint.Port}");
+        try
+        {
+            using var client = new BackendClient(baseUrl, AdminToken ?? "");
+            client.SetAuthToken(AuthToken ?? "");
+            var tasks = await client.GetMyTasksAsync(CommsSelectedMissionId);
+            if (tasks == null) { CommsTasksMessage = "Could not load tasks."; return; }
+            CommsMyTasks.Clear();
+            foreach (var t in tasks)
+                CommsMyTasks.Add(CommsTaskDisplayItem.From(t));
+            CommsTasksMessage = tasks.Count == 0 ? "No tasks assigned to your unit or group." : "";
+        }
+        catch (Exception ex)
+        {
+            CommsTasksMessage = $"Task load failed: {ex.Message}";
+        }
+    }
+
+    private void StartCommsTaskPolling()
+    {
+        if (_commsTaskTimer != null) return;
+        _commsTaskTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30)
+        };
+        _commsTaskTimer.Tick += async (_, _) => await LoadCommsTasksAsync();
+        _commsTaskTimer.Start();
+    }
+
+    private void StopCommsTaskPolling()
+    {
+        if (_commsTaskTimer == null) return;
+        _commsTaskTimer.Stop();
+        _commsTaskTimer = null;
     }
 
     #endregion
@@ -3063,6 +3168,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        StopCommsTaskPolling();
         StopOverlayCleanupTimer();
         HideOverlay();
         _hook?.Dispose();

@@ -105,6 +105,22 @@ public sealed class CompanionUnitInfo
     public int? VhfFrequency { get; set; }
 }
 
+/// <summary>Task assigned to the user's unit/group, from GET /api/companion/tasks.</summary>
+public sealed class CompanionTaskItem
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? Description { get; set; }
+    [JsonPropertyName("task_type")] public string TaskType { get; set; } = "custom";
+    public string Priority { get; set; } = "normal";
+    public string Status { get; set; } = "pending";
+    public string? Roe { get; set; }
+    [JsonPropertyName("due_at")] public string? DueAt { get; set; }
+    [JsonPropertyName("target_x")] public double? TargetX { get; set; }
+    [JsonPropertyName("target_y")] public double? TargetY { get; set; }
+    [JsonPropertyName("target_z")] public double? TargetZ { get; set; }
+}
+
 /// <summary>Response from GET /api/companion/bootstrap?mission_id=.</summary>
 public sealed class CompanionBootstrapResponse
 {
@@ -753,6 +769,26 @@ public sealed class BackendClient : IDisposable
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>GET /api/companion/tasks?mission_id= — tasks assigned to the user's unit or groups. Requires Bearer token.</summary>
+    public async Task<List<CompanionTaskItem>?> GetMyTasksAsync(string missionId)
+    {
+        try
+        {
+            var url = "api/companion/tasks?mission_id=" + Uri.EscapeDataString(missionId);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!string.IsNullOrWhiteSpace(_authToken))
+                req.Headers.Add("Authorization", $"Bearer {_authToken}");
+            using var resp = await _http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+            var body = await resp.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<List<CompanionTaskItem>>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            return null;
         }
     }
 

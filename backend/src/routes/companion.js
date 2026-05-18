@@ -486,4 +486,60 @@ router.post('/units/set-position', requireCompanionAuth(['companion']), validate
   }
 });
 
+// Tasks assigned to the current user's primary unit or groups (for companion task inbox).
+router.get('/tasks', requireCompanionAuth(['companion']), requireMissionMember, async (req, res, next) => {
+  try {
+    const missionId = req.query.mission_id;
+
+    const memberResult = await query(
+      `SELECT primary_unit_id, assigned_group_ids FROM mission_members WHERE mission_id = $1 AND user_id = $2`,
+      [missionId, req.user.id]
+    );
+    const member = memberResult.rows[0];
+    if (!member) return res.json([]);
+
+    const primaryUnitId = member.primary_unit_id || null;
+    const assignedGroupIds = Array.isArray(member.assigned_group_ids) ? member.assigned_group_ids : [];
+
+    let unitGroupId = null;
+    if (primaryUnitId) {
+      const unitRow = await query('SELECT group_id FROM units WHERE id = $1', [primaryUnitId]);
+      if (unitRow.rows.length > 0) unitGroupId = unitRow.rows[0].group_id;
+    }
+
+    const allGroupIds = [...new Set([...assignedGroupIds, ...(unitGroupId ? [unitGroupId] : [])])];
+
+    if (!primaryUnitId && allGroupIds.length === 0) return res.json([]);
+
+    const conditions = [];
+    const params = [missionId];
+    if (primaryUnitId) {
+      conditions.push(`t.assigned_to = $${params.length + 1}`);
+      params.push(primaryUnitId);
+    }
+    if (allGroupIds.length > 0) {
+      conditions.push(`t.assigned_group = ANY($${params.length + 1}::uuid[])`);
+      params.push(allGroupIds);
+    }
+
+    const result = await query(
+      `SELECT t.id, t.title, t.description, t.task_type, t.priority, t.status, t.roe, t.due_at,
+              t.target_x, t.target_y, t.target_z
+       FROM tasks t
+       WHERE t.mission_id = $1
+         AND (${conditions.join(' OR ')})
+         AND t.status NOT IN ('cancelled', 'done')
+       ORDER BY
+         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+         t.created_at DESC
+       LIMIT 50`,
+      params
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

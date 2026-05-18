@@ -592,6 +592,40 @@
                 <Button Content="Set location" Margin="0,0,0,0" Padding="10,6" VerticalAlignment="Bottom"
                         IsEnabled="{Binding CommsCanSetPosition}" Click="CommsSetLocation_Click"/>
               </StackPanel>
+
+              <!-- Tasks from Lead -->
+              <StackPanel Orientation="Horizontal" Margin="0,24,0,8">
+                <TextBlock Text="Tasks from Lead" Foreground="{StaticResource TextPrimary}"
+                           FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <Button Content="Refresh" Margin="12,0,0,0" Padding="8,4" VerticalAlignment="Center"
+                        Click="CommsRefreshTasks_Click"/>
+              </StackPanel>
+              <TextBlock Text="Tasks assigned to your unit or group by the mission lead."
+                         Foreground="{StaticResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+              <ItemsControl ItemsSource="{Binding CommsMyTasks}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Background="#1a1f2e" BorderBrush="#2d3347" BorderThickness="1"
+                            CornerRadius="4" Padding="8" Margin="0,0,0,6">
+                      <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                          <TextBlock Text="{Binding PriorityLabel}" Foreground="{Binding PriorityColor}"
+                                     FontSize="10" FontWeight="Bold" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="{Binding Title}" Foreground="White"
+                                     FontSize="12" FontWeight="SemiBold"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding TypeAndStatus}" Foreground="{StaticResource TextSecondary}"
+                                   FontSize="11" Margin="0,2,0,0"/>
+                        <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextSecondary}"
+                                   FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}}"/>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Text="{Binding CommsTasksMessage}" Foreground="{StaticResource TextSecondary}"
+                         FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
             </StackPanel>
           </ScrollViewer>
         </Grid>
